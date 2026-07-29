@@ -1,0 +1,232 @@
+{
+  "_": "旅行数据。内核字段见 docs/需求文档.md §3.1，旅行皮肤字段见 §3.2。",
+  "_钱": "多币种按录入时的汇率折算，汇率存在这里不实时查（rates 是 1 单位外币 = 多少 baseCurrency）。",
+  "_单一来源": "花钱只认 spend 条目。stay.price 只对未出行的预算有意义，已旅行的住宿花销写成 spend，不重复计。",
+  "version": 1,
+  "baseCurrency": "CNY",
+  "rates": { "CNY": 1, "JPY": 0.0512 },
+
+  "trips": [
+    {
+      "id": "trip-014",
+      "title": "东京",
+      "status": "done",
+      "seed": 101,
+      "time": { "start": "2026-03-14", "end": "2026-03-19" },
+      "data": { "no": "TRIP 014", "companions": "和家人", "budget": 9000, "currency": "CNY", "cover": "fuji" },
+      "entries": [
+        {
+          "id": "t14-leg-out", "type": "leg", "title": "上海 → 东京",
+          "time": { "start": "2026-03-14T09:20", "end": "2026-03-14T13:35" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "from": "SHA", "to": "HND", "mode": "air", "code": "MU523", "flown": true }
+        },
+        {
+          "id": "t14-stay", "type": "stay", "title": "浅草 · 河景民宿",
+          "time": { "start": "2026-03-14", "end": "2026-03-19" },
+          "place": { "name": "浅草", "city": "东京" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "checkIn": "2026-03-14", "checkOut": "2026-03-19", "booked": true }
+        },
+        {
+          "id": "t14-p-ueno", "type": "place", "title": "上野 · 阿美横丁",
+          "time": { "start": "2026-03-14T18:00", "end": "2026-03-14T20:30" },
+          "place": { "name": "阿美横丁", "city": "东京", "lat": 35.71, "lon": 139.77 },
+          "tags": ["吃"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 1, "duration": "2.5h", "rating": 3 }
+        },
+        {
+          "id": "t14-p-kawaguchi", "type": "place", "title": "河口湖",
+          "time": { "start": "2026-03-15T09:00", "end": "2026-03-15T16:00" },
+          "place": { "name": "河口湖", "city": "富士河口湖", "lat": 35.50, "lon": 138.76 },
+          "tags": ["湖", "富士山"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 2, "duration": "7h", "rating": 5 }
+        },
+        {
+          "id": "t14-ph-kawaguchi", "type": "photo", "title": "对岸的富士山",
+          "time": { "start": "2026-03-15T15:10" },
+          "place": { "name": "河口湖", "city": "富士河口湖" },
+          "media": [{ "id": "m1", "path": "art:fuji", "kind": "drawing", "w": 150, "h": 105 }],
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 2 }
+        },
+        {
+          "id": "t14-p-sensoji", "type": "place", "title": "浅草寺",
+          "time": { "start": "2026-03-16T10:30", "end": "2026-03-16T14:00" },
+          "place": { "name": "浅草寺", "city": "东京", "lat": 35.71, "lon": 139.80 },
+          "tags": ["寺庙"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 3, "duration": "3.5h", "rating": 4 }
+        },
+        {
+          "id": "t14-ph-sensoji", "type": "photo", "title": "雷门",
+          "time": { "start": "2026-03-16T11:05" },
+          "place": { "name": "浅草", "city": "东京" },
+          "media": [{ "id": "m2", "path": "art:torii", "kind": "drawing", "w": 150, "h": 105 }],
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 3 }
+        },
+        {
+          "id": "t14-note-rain", "type": "note", "title": "躲雨",
+          "time": { "start": "2026-03-16T12:40" },
+          "body": "第三天下了雨，在浅草的屋檐下躲了半小时。\n反而是**这趟最喜欢的半小时**。",
+          "tags": [], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t14-p-yokohama", "type": "place", "title": "横滨 · 红砖仓库",
+          "time": { "start": "2026-03-17T13:00", "end": "2026-03-17T18:30" },
+          "place": { "name": "红砖仓库", "city": "横滨", "lat": 35.45, "lon": 139.64 },
+          "tags": ["海边"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 4, "duration": "5.5h", "rating": 3 }
+        },
+        {
+          "id": "t14-p-shinjuku", "type": "place", "title": "新宿",
+          "time": { "start": "2026-03-18T17:00", "end": "2026-03-18T22:00" },
+          "place": { "name": "新宿", "city": "东京", "lat": 35.69, "lon": 139.70 },
+          "tags": ["夜景"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 5, "duration": "5h", "rating": 4 }
+        },
+        {
+          "id": "t14-ph-shinjuku", "type": "photo", "title": "歌舞伎町的招牌",
+          "time": { "start": "2026-03-18T19:20" },
+          "place": { "name": "新宿", "city": "东京" },
+          "media": [{ "id": "m3", "path": "art:street", "kind": "drawing", "w": 150, "h": 105 }],
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 5 }
+        },
+        {
+          "id": "t14-p-tsukiji", "type": "place", "title": "筑地场外市场",
+          "time": { "start": "2026-03-19T08:00", "end": "2026-03-19T10:30" },
+          "place": { "name": "筑地场外市场", "city": "东京", "lat": 35.66, "lon": 139.77 },
+          "tags": ["吃"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 6, "duration": "2.5h", "rating": 4 }
+        },
+        {
+          "id": "t14-leg-back", "type": "leg", "title": "东京 → 上海",
+          "time": { "start": "2026-03-19T14:10", "end": "2026-03-19T16:45" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "from": "HND", "to": "SHA", "mode": "air", "code": "MU524", "flown": true }
+        },
+        {
+          "id": "t14-sp-air", "type": "spend", "title": "往返机票",
+          "time": { "start": "2026-02-08" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 3200, "currency": "CNY", "category": "交通" }
+        },
+        {
+          "id": "t14-sp-stay", "type": "spend", "title": "民宿 5 晚",
+          "time": { "start": "2026-03-19" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 62000, "currency": "JPY", "category": "住" }
+        },
+        {
+          "id": "t14-sp-food", "type": "spend", "title": "吃饭合计",
+          "time": { "start": "2026-03-19" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 28000, "currency": "JPY", "category": "吃" }
+        },
+        {
+          "id": "t14-sp-ticket", "type": "spend", "title": "门票合计",
+          "time": { "start": "2026-03-19" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 4500, "currency": "JPY", "category": "门票" }
+        },
+        {
+          "id": "t14-sp-transit", "type": "spend", "title": "JR + 地铁",
+          "time": { "start": "2026-03-19" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 8000, "currency": "JPY", "category": "交通" }
+        },
+        {
+          "id": "t14-sp-shop", "type": "spend", "title": "买的东西",
+          "time": { "start": "2026-03-18" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 3750, "currency": "JPY", "category": "购物" }
+        }
+      ]
+    },
+    {
+      "id": "trip-015",
+      "title": "京都",
+      "status": "planned",
+      "seed": 102,
+      "time": { "start": "2026-11-20", "end": "2026-11-23" },
+      "data": { "no": "计划中", "budget": 9000, "currency": "CNY", "cover": null },
+      "entries": [
+        {
+          "id": "t15-leg-out", "type": "leg", "title": "上海 → 大阪",
+          "time": { "start": "2026-11-20T08:40" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "from": "SHA", "to": "KIX", "mode": "air", "flown": false }
+        },
+        {
+          "id": "t15-stay-machiya", "type": "stay", "title": "柳小路町屋",
+          "time": { "start": "2026-11-20", "end": "2026-11-22" },
+          "place": { "name": "柳小路", "city": "京都" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "checkIn": "2026-11-20", "checkOut": "2026-11-22", "booked": true, "price": 41000, "currency": "JPY" }
+        },
+        {
+          "id": "t15-p-arashiyama", "type": "place", "title": "岚山",
+          "time": { "start": "2026-11-20T13:00" },
+          "place": { "name": "岚山", "city": "京都", "lat": 35.01, "lon": 135.67 },
+          "tags": ["竹林"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 1 }
+        },
+        {
+          "id": "t15-p-fushimi", "type": "place", "title": "伏见稻荷",
+          "time": { "start": "2026-11-21T08:30" },
+          "place": { "name": "伏见稻荷大社", "city": "京都", "lat": 34.97, "lon": 135.77 },
+          "tags": ["神社"], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "day": 2 }
+        },
+        {
+          "id": "t15-w-tetsugaku", "type": "place", "title": "哲学之道",
+          "time": {}, "place": { "name": "哲学之道", "city": "京都", "lat": 35.03, "lon": 135.79 },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-nishiki", "type": "place", "title": "锦市场",
+          "time": {}, "place": { "name": "锦市场", "city": "京都", "lat": 35.00, "lon": 135.76 },
+          "tags": ["想去", "吃"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-ninenzaka", "type": "place", "title": "二年坂",
+          "time": {}, "place": { "name": "二年坂", "city": "京都", "lat": 34.99, "lon": 135.78 },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-kifune", "type": "place", "title": "贵船神社",
+          "time": {}, "place": { "name": "贵船神社", "city": "京都", "lat": 35.12, "lon": 135.76 },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-byodoin", "type": "place", "title": "宇治平等院",
+          "time": {}, "place": { "name": "平等院", "city": "宇治", "lat": 34.89, "lon": 135.80 },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-tower", "type": "place", "title": "京都塔",
+          "time": {}, "place": { "name": "京都塔", "city": "京都" },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-w-daitokuji", "type": "place", "title": "大德寺",
+          "time": {}, "place": { "name": "大德寺", "city": "京都" },
+          "tags": ["想去"], "source": { "provider": "manual", "confidence": 1 }, "data": {}
+        },
+        {
+          "id": "t15-sp-air", "type": "spend", "title": "机票（已付）",
+          "time": { "start": "2026-09-30" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 2600, "currency": "CNY", "category": "交通" }
+        },
+        {
+          "id": "t15-sp-deposit", "type": "spend", "title": "町屋定金",
+          "time": { "start": "2026-10-06" },
+          "tags": [], "source": { "provider": "manual", "confidence": 1 },
+          "data": { "amount": 600, "currency": "CNY", "category": "住" }
+        }
+      ]
+    }
+  ]
+}

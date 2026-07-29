@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>旅行地图 · 手绘线稿</title>
+<link rel="stylesheet" href="fonts/inline.css">
+<style>
+:root{
+  --sys:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+  --hand:'MarkerGothic',var(--sys);
+  --display:'SmileySans',var(--sys);
+  --ink:#2f2c26; --ink2:#7d7566; --ink3:#a89e8c;
+  --paper:#fdfbf5; --stage:#efe9dd;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--hand);background:var(--stage);color:var(--ink);
+     line-height:1.75;padding:28px 20px 90px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto}
+.ctl{
+  position:sticky;top:0;z-index:50;margin:0 0 24px;padding:11px 15px;
+  background:var(--paper);display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  font-size:13px;color:#5d564a;border-bottom:1px dashed #d3c7ae;
+}
+.ctl label{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.ctl input[type=range]{width:92px;accent-color:#8a6d4a}
+.ctl b{font-family:var(--display);color:var(--ink);min-width:24px;display:inline-block}
+.ctl .seg{display:flex;gap:0}
+.ctl .seg button{font-family:var(--hand);font-size:13px;padding:4px 13px;cursor:pointer;
+  background:#f3ecda;border:1px dashed #b3a894;color:#7d7566}
+.ctl .seg button.on{background:#e5d8b8;color:var(--ink)}
+.ctl .hint{color:var(--ink3);font-size:12px}
+.head{max-width:720px;margin-bottom:20px}
+.head h1{font-size:26px;line-height:1.3;margin-bottom:6px}
+.head p{font-size:13.5px;color:var(--ink2)}
+.head code{font-family:ui-monospace,monospace;font-size:12px;background:#e4dcc9;padding:1px 5px}
+.stage{background:var(--paper);padding:18px 18px 12px;position:relative}
+.stage h2{font-size:15px;color:var(--ink2);font-weight:400;margin-bottom:4px}
+#map{display:block;width:100%;height:auto;overflow:visible;touch-action:none}
+#map.globe{cursor:grab}
+#map.globe:active{cursor:grabbing}
+.legend{display:flex;flex-wrap:wrap;gap:20px;margin-top:10px;font-size:12.5px;color:var(--ink2)}
+.legend i{display:inline-block;width:34px;height:8px;margin-right:6px;vertical-align:1px}
+.foot{font-size:12.5px;color:var(--ink2);margin-top:18px;line-height:1.9;max-width:760px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="ctl">
+  <span class="seg">
+    <button id="v-flat" class="on">摊平</button><button id="v-globe">地球</button>
+  </span>
+  <label>手抖 <input type="range" id="c-rough" min="0" max="3" step="0.1" value="1.2"><b id="o-rough">1.2</b></label>
+  <label>弯曲 <input type="range" id="c-bow" min="0" max="4" step="0.1" value="1.5"><b id="o-bow">1.5</b></label>
+  <label>笔粗 <input type="range" id="c-sw" min="0.4" max="2.5" step="0.1" value="0.8"><b id="o-sw">0.8</b></label>
+  <label>简化 <input type="range" id="c-tol" min="0.5" max="6" step="0.5" value="2"><b id="o-tol">2.0</b></label>
+  <label><input type="checkbox" id="c-color" checked> 上色</label>
+  <label><input type="checkbox" id="c-border"> 国界</label>
+  <label><input type="checkbox" id="c-grat" checked> 经纬线</label>
+  <span class="hint" id="dbg">初始化中…</span>
+</div>
+
+<div class="head">
+  <h1>旅行地图 —— 摊平的世界 / 手转的地球</h1>
+  <p>海岸线不是贴的图片，是 Natural Earth 的真实坐标经投影后再过一遍 <code>rough.js</code>，
+     所以每一段海岸都是手抖的线，和整本手帐同一支笔。航线只需要起点终点两个城市，不读邮箱。
+     地球视图可以用鼠标拖着转。</p>
+</div>
+
+<div class="stage">
+  <h2 id="stage-title">等距圆柱投影 · 世界摊平</h2>
+  <svg id="map" viewBox="0 0 1040 560"></svg>
+  <div class="legend">
+    <span><i id="lg-done"></i>已旅行</span>
+    <span><i id="lg-plan"></i>待出行</span>
+    <span id="lg-count"></span>
+  </div>
+</div>
+
+<p class="foot" id="foot"></p>
+</div>
+
+<script src="vendor/rough.js"></script>
+<script src="vendor/d3-array.min.js"></script>
+<script src="vendor/d3-geo.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="data/world-110m.js"></script>
+<script>
+/* ---------- 调色板：和 hand-drawn.html 保持一致 ---------- */
+const C = { ink:'#2f2c26', ink2:'#7d7566', ink3:'#b3a894',
+            blue:'#a9c6d6', lblue:'#dbe7ee', green:'#a3bd9a', red:'#e0917a',
+            yellow:'#f0cd7f', pink:'#e9bdb0', sand:'#e6dcc6', sea:'#eef3f4',
+            snow:'#f7f8f6', paper:'#fdfbf5' };
+
+/* 已定稿的手绘参数 */
+let drag = null;   // 地球拖动状态（draw 里会读，用来降精度）
+const S = { rough:1.2, bow:1.5, sw:0.8, tol:2, color:true, border:false, grat:true,
+            view:'flat', pen:0 };
+
+/* ---------- 机场坐标（经度, 纬度） ---------- */
+const AP = {
+  SHA:{n:'上海',   ll:[121.34, 31.20]},
+  HND:{n:'东京',   ll:[139.78, 35.55]},
+  KIX:{n:'大阪',   ll:[135.24, 34.43]},
+  CTS:{n:'札幌',   ll:[141.69, 42.78]},
+  ICN:{n:'首尔',   ll:[126.45, 37.46]},
+  TPE:{n:'台北',   ll:[121.23, 25.08]},
+  HKG:{n:'香港',   ll:[113.91, 22.31]},
+  BKK:{n:'曼谷',   ll:[100.75, 13.69]},
+  SIN:{n:'新加坡', ll:[103.99,  1.36]},
+  DPS:{n:'巴厘岛', ll:[115.17, -8.75]},
+  CDG:{n:'巴黎',   ll:[  2.55, 49.01]},
+  LHR:{n:'伦敦',   ll:[ -0.45, 51.47]},
+  IST:{n:'伊斯坦布尔', ll:[28.81, 40.98]},
+  JFK:{n:'纽约',   ll:[-73.78, 40.64]},
+  LAX:{n:'洛杉矶', ll:[-118.41, 33.94]},
+  SYD:{n:'悉尼',   ll:[151.18, -33.94]},
+  CUZ:{n:'库斯科', ll:[-71.94, -13.54]},
+  CPT:{n:'开普敦', ll:[ 18.60, -33.97]}
+};
+
+/* ---------- 航线：只要起点终点，done=已旅行 / plan=待出行 ---------- */
+const TRIPS = [
+  {f:'SHA', t:'HND', y:'2023.04', s:'done'},
+  {f:'SHA', t:'KIX', y:'2023.11', s:'done'},
+  {f:'SHA', t:'CTS', y:'2024.01', s:'done'},
+  {f:'SHA', t:'ICN', y:'2024.05', s:'done'},
+  {f:'SHA', t:'TPE', y:'2024.08', s:'done'},
+  {f:'SHA', t:'HKG', y:'2024.10', s:'done'},
+  {f:'SHA', t:'BKK', y:'2025.02', s:'done'},
+  {f:'SIN', t:'DPS', y:'2025.03', s:'done'},
+  {f:'SHA', t:'SIN', y:'2025.03', s:'done'},
+  {f:'SHA', t:'CDG', y:'2025.09', s:'done'},
+  {f:'CDG', t:'LHR', y:'2025.09', s:'done'},
+  {f:'SHA', t:'IST', y:'2026.05', s:'plan'},
+  {f:'IST', t:'CPT', y:'2026.05', s:'plan'},
+  {f:'SHA', t:'JFK', y:'2026.10', s:'plan'},
+  {f:'JFK', t:'CUZ', y:'2026.10', s:'plan'},
+  {f:'SHA', t:'SYD', y:'2027.01', s:'plan'}
+];
+
+/* ---------- SVG / rough.js 基础件 ---------- */
+const NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('map');
+const W = 1040, H = 560;
+const mk = n => document.createElementNS(NS, n);
+
+function opts(extra, seed){
+  return Object.assign({
+    roughness:S.rough, bowing:S.bow, strokeWidth:S.sw,
+    stroke:C.ink, seed:(seed|0) + S.pen*977, fill:undefined,
+    preserveVertices:false
+  }, extra);
+}
+
+/* 地名/年份用 <text>，不做抖动 —— 抖动的字反而糊 */
+function label(x, y, str, size, fill, anchor){
+  const t = mk('text');
+  t.setAttribute('x', x); t.setAttribute('y', y);
+  t.setAttribute('font-family', 'MarkerGothic, sans-serif');
+  t.setAttribute('font-size', size);
+  t.setAttribute('fill', fill || C.ink);
+  t.setAttribute('text-anchor', anchor || 'start');
+  t.textContent = str;
+  return t;
+}
+
+/* ---------- 把 d3 的投影结果收成「点列」，顺便抽稀 ----------
+   直接把 d3.geoPath 生成的路径字符串丢给 rough.js 会有两个问题：
+   点太密（110m 海岸线上万个点）导致抖动被平均掉、而且慢。
+   所以自己实现一个 d3 的 path context，一边接收 d3 的裁剪结果一边按像素距离抽稀。 */
+function collector(tol){
+  const rings = [];
+  let cur = null, last = null;
+  return {
+    rings,
+    beginPath(){},
+    moveTo(x, y){ cur = [[x, y]]; rings.push(cur); last = [x, y]; },
+    lineTo(x, y){
+      if (!cur) return;
+      if (Math.abs(x-last[0]) + Math.abs(y-last[1]) >= tol) { cur.push([x, y]); last = [x, y]; }
+    },
+    closePath(){ if (cur && cur.length > 2) cur.closed = true; },
+    arc(){}
+  };
+}
+
+/* 点列 -> SVG path 字符串；顺手丢掉太小的岛（不然全是碎点） */
+function ringsToPath(rings, minPts, minSpan){
+  let d = '';
+  for (const r of rings){
+    if (r.length < (minPts || 3)) continue;
+    if (minSpan){
+      let x0=1e9, y0=1e9, x1=-1e9, y1=-1e9;
+      for (const p of r){ if(p[0]<x0)x0=p[0]; if(p[0]>x1)x1=p[0];
+                          if(p[1]<y0)y0=p[1]; if(p[1]>y1)y1=p[1]; }
+      if (Math.max(x1-x0, y1-y0) < minSpan) continue;
+    }
+    d += 'M' + r.map(p => p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join('L');
+    if (r.closed) d += 'Z';
+  }
+  return d;
+}
+
+function geoToPath(proj, geojson, tol, minPts, minSpan){
+  const col = collector(tol);
+  d3.geoPath(proj, col)(geojson);
+  return ringsToPath(col.rings, minPts, minSpan);
+}
+
+/* ---------- 地理数据 ---------- */
+const LAND = topojson.feature(WORLD_TOPO, WORLD_TOPO.objects.land);
+/* 只取国界的内部线，不重复画海岸线 */
+const BORDERS = topojson.mesh(WORLD_TOPO, WORLD_TOPO.objects.countries, (a, b) => a !== b);
+const GRAT = d3.geoGraticule().step([30, 30])();
+
+/* ---------- 投影 ---------- */
+let rot = [-150, -10];          // 地球视图的当前旋转，摊平视图用固定值
+function projection(){
+  if (S.view === 'globe'){
+    return d3.geoOrthographic().rotate(rot)
+      .fitExtent([[46, 26], [W-46, H-26]], {type:'Sphere'});
+  }
+  // 中心放在 160°E：分割线落在 20°W 的大西洋上，不切断任何大陆
+  return d3.geoEquirectangular().rotate([-160, 0])
+    .fitExtent([[14, 14], [W-14, H-14]], {type:'Sphere'});
+}
+
+/* ---------- 航线 ---------- */
+/* 摊平视图：两点之间画一条向上拱的二次贝塞尔 —— 航空公司地图的经典画法，
+   比真实大圆航线好看，也更像手画的。地球视图用真正的大圆。 */
+function arcFlat(p0, p1){
+  const dx = p1[0]-p0[0], dy = p1[1]-p0[1];
+  const len = Math.hypot(dx, dy);
+  const mx = (p0[0]+p1[0])/2, my = (p0[1]+p1[1])/2;
+  const k = 0.22 * len;                       // 拱高
+  const cx = mx - dy/len * k, cy = my + dx/len * k;
+  return { d:`M${p0[0].toFixed(1)} ${p0[1].toFixed(1)}Q${cx.toFixed(1)} ${cy.toFixed(1)} ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`,
+           mid:[0.25*p0[0]+0.5*cx+0.25*p1[0], 0.25*p0[1]+0.5*cy+0.25*p1[1]] };
+}
+
+function arcGlobe(proj, a, b){
+  const interp = d3.geoInterpolate(a, b);
+  const pts = [];
+  for (let i = 0; i <= 40; i++) pts.push(interp(i/40));
+  const col = collector(1);
+  d3.geoPath(proj, col)({type:'LineString', coordinates:pts});
+  const d = ringsToPath(col.rings, 2, 0);
+  const half = proj(interp(0.5));
+  return { d, mid: visible(a) && visible(b) ? half : null };
+}
+
+/* 地球视图：判断一个经纬点在正面还是背面 */
+function visible(ll){
+  const center = [-rot[0], -rot[1]];
+  return d3.geoDistance(ll, center) < Math.PI/2 - 0.02;
+}
+
+/* 小飞机：三笔画出来，按航线方向旋转 */
+function planeAt(rc, x, y, deg, color){
+  const g = mk('g');
+  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${deg.toFixed(1)})`);
+  const o = opts({ fill:'none', stroke:color, strokeWidth:S.sw*1.05,
+                   roughness:S.rough*0.7, bowing:S.bow*0.5 }, 4242);
+  g.appendChild(rc.path('M-7 0 L7 0', o));
+  g.appendChild(rc.path('M-1 0 L-6 -6 M-1 0 L-6 6', o));
+  g.appendChild(rc.path('M5 0 L2.5 -2.6 M5 0 L2.5 2.6', o));
+  return g;
+}
+
+/* ---------- 主绘制 ---------- */
+function draw(){
+  const proj = projection();
+  const rc = rough.svg(svg);
+  const frag = document.createDocumentFragment();
+  const globe = S.view === 'globe';
+  const add = n => { if (n) frag.appendChild(n); };
+  /* 拖动过程中粗化一档：110m 海岸线抖动一遍大约几万个字符的路径，
+     拖着转的时候先要跟手，松手后再画细的 */
+  const tol = drag ? Math.max(S.tol, 4.5) : S.tol;
+  const showBorder = S.border && !drag;
+
+  /* 1. 海 */
+  if (globe){
+    const [cx, cy] = proj.translate(), r = proj.scale();
+    if (S.color) add(rc.circle(cx, cy, r*2, opts({ fill:C.sea, fillStyle:'solid',
+      stroke:'none', roughness:S.rough*1.3 }, 3)));
+    add(rc.circle(cx, cy, r*2, opts({ fill:'none', strokeWidth:S.sw*1.5 }, 3)));
+  } else {
+    const b = d3.geoPath(proj).bounds({type:'Sphere'});
+    const w = b[1][0]-b[0][0], h = b[1][1]-b[0][1];
+    if (S.color) add(rc.rectangle(b[0][0], b[0][1], w, h, opts({ fill:C.sea,
+      fillStyle:'solid', stroke:'none', roughness:S.rough*1.3 }, 3)));
+    add(rc.rectangle(b[0][0], b[0][1], w, h, opts({ fill:'none', strokeWidth:S.sw*1.5 }, 3)));
+  }
+
+  /* 2. 经纬线 */
+  if (S.grat){
+    const d = geoToPath(proj, GRAT, Math.max(tol, 3), 2, 0);
+    if (d) add(rc.path(d, opts({ fill:'none', stroke:'#cddbe0',
+      strokeWidth:S.sw*0.7, roughness:S.rough*0.8 }, 7)));
+  }
+
+  /* 3. 陆地：先平涂色块（故意画歪、压不住线稿），再描海岸线 */
+  const landPath = geoToPath(proj, LAND, tol, 4, 2.5);
+  if (S.color && landPath){
+    const n = rc.path(landPath, opts({ fill:C.sand, fillStyle:'solid', stroke:'none',
+      roughness:S.rough*1.4 }, 11));
+    n.setAttribute('transform', 'translate(1.2,1.4)');
+    add(n);
+  }
+  if (landPath) add(rc.path(landPath, opts({ fill:'none', strokeWidth:S.sw*1.15 }, 11)));
+
+  /* 4. 国界（默认关，点密、容易糊） */
+  if (showBorder){
+    const d = geoToPath(proj, BORDERS, Math.max(tol, 2.5), 3, 3);
+    if (d) add(rc.path(d, opts({ fill:'none', stroke:'#c4b79c',
+      strokeWidth:S.sw*0.65, roughness:S.rough*0.9, strokeLineDash:[4, 3] }, 13)));
+  }
+
+  /* 5. 航线 */
+  let seed = 100, nDone = 0, nPlan = 0;
+  const seen = new Set();
+  for (const t of TRIPS){
+    const a = AP[t.f], b = AP[t.t];
+    if (!a || !b) continue;
+    const done = t.s === 'done';
+    done ? nDone++ : nPlan++;
+    const col = done ? C.red : C.ink3;
+    let d, mid, deg = 0;
+    if (globe){
+      const r = arcGlobe(proj, a.ll, b.ll);
+      d = r.d; mid = r.mid;
+      if (mid){
+        const i = d3.geoInterpolate(a.ll, b.ll);
+        const p0 = proj(i(0.46)), p1 = proj(i(0.54));
+        deg = Math.atan2(p1[1]-p0[1], p1[0]-p0[0]) * 180/Math.PI;
+      }
+    } else {
+      const p0 = proj(a.ll), p1 = proj(b.ll);
+      const r = arcFlat(p0, p1);
+      d = r.d; mid = r.mid;
+      deg = Math.atan2(p1[1]-p0[1], p1[0]-p0[0]) * 180/Math.PI;
+    }
+    if (!d) continue;
+    add(rc.path(d, opts({ fill:'none', stroke:col, strokeWidth:S.sw*(done?1.25:1),
+      roughness:S.rough*0.85, bowing:S.bow*0.6,
+      strokeLineDash: done ? undefined : [6, 5] }, seed += 7)));
+    if (mid) add(planeAt(rc, mid[0], mid[1], deg, col));
+    seen.add(t.f); seen.add(t.t);
+  }
+
+  /* 6. 城市：圈 + 中文名 + 机场三字码 */
+  for (const code of seen){
+    const ap = AP[code];
+    if (globe && !visible(ap.ll)) continue;
+    const p = proj(ap.ll);
+    if (!p || !isFinite(p[0])) continue;
+    if (S.color) add(rc.circle(p[0], p[1], 8, opts({ fill:C.yellow, fillStyle:'solid',
+      stroke:'none', roughness:S.rough*1.2 }, 200 + code.charCodeAt(0))));
+    add(rc.circle(p[0], p[1], 8, opts({ fill:'none', strokeWidth:S.sw*1.1,
+      roughness:S.rough*0.9 }, 200 + code.charCodeAt(0))));
+    add(label(p[0] + 8, p[1] - 5, ap.n, 13, C.ink));
+    const t = label(p[0] + 8, p[1] + 8, code, 10, C.ink2);
+    t.setAttribute('font-family', 'SmileySans, sans-serif');
+    t.setAttribute('letter-spacing', '.06em');
+    add(t);
+  }
+
+  /* 7. 手写标注 */
+  if (!globe){
+    add(label(24, H - 22, '分割线在 20°W 的大西洋上，所以没有一块大陆被切开', 12, C.ink3));
+  }
+
+  svg.setAttribute('class', globe ? 'globe' : '');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  svg.appendChild(frag);
+
+  document.getElementById('stage-title').textContent =
+    globe ? `正交投影 · 地球（拖动旋转，当前中心 ${(-rot[0]).toFixed(0)}°E / ${(-rot[1]).toFixed(0)}°N）`
+          : '等距圆柱投影 · 世界摊平';
+  document.getElementById('lg-count').textContent =
+    `已飞 ${nDone} 段 · 计划 ${nPlan} 段 · ${seen.size} 座城市`;
+  return { paths: (landPath.match(/M/g) || []).length, cities: seen.size };
+}
+
+/* 图例的两根线也用 rough.js 画 */
+function drawLegend(){
+  [['lg-done', C.red, undefined], ['lg-plan', C.ink3, [6, 5]]].forEach(([id, col, dash]) => {
+    const host = document.getElementById(id);
+    const s = mk('svg');
+    s.setAttribute('viewBox', '0 0 34 8');
+    s.setAttribute('width', 34); s.setAttribute('height', 8);
+    s.style.overflow = 'visible';
+    const rc = rough.svg(s);
+    s.appendChild(rc.path('M1 5 Q17 -1 33 4', opts({ fill:'none', stroke:col,
+      strokeWidth:S.sw*1.2, roughness:S.rough*0.8, bowing:S.bow*0.6,
+      strokeLineDash:dash }, 55)));
+    while (host.firstChild) host.removeChild(host.firstChild);
+    host.appendChild(s);
+  });
+}
+
+/* ---------- 自检 + 控件 ---------- */
+let nPaint = 0;
+function say(msg, info){
+  const d = document.getElementById('dbg');
+  d.style.color = msg ? '#b0483a' : '';
+  d.textContent = msg ? '⚠ ' + msg
+    : `${S.view === 'globe' ? '地球' : '摊平'} · 重绘 ${nPaint} 次 · `
+      + `手抖 ${S.rough} / 弯曲 ${S.bow} / 笔粗 ${S.sw} / 简化 ${S.tol}`
+      + (info ? ` · 陆块 ${info.paths}` : '');
+}
+function repaint(){
+  nPaint++;
+  try { const info = draw(); drawLegend(); say('', info); }
+  catch (e) { say(e.message); console.error(e); }
+}
+
+const bind = (id, key, out) => {
+  const inp = document.getElementById(id);
+  const lab = out && document.getElementById(out);
+  const apply = () => {
+    S[key] = inp.type === 'checkbox' ? inp.checked : +inp.value;
+    if (lab) lab.textContent = (+inp.value).toFixed(1);
+    repaint();
+  };
+  inp.addEventListener('input', apply);
+  inp.addEventListener('change', apply);
+  if (lab) lab.textContent = (+inp.value).toFixed(1);
+};
+bind('c-rough', 'rough', 'o-rough');
+bind('c-bow', 'bow', 'o-bow');
+bind('c-sw', 'sw', 'o-sw');
+bind('c-tol', 'tol', 'o-tol');
+bind('c-color', 'color');
+bind('c-border', 'border');
+bind('c-grat', 'grat');
+
+/* 视图切换 */
+const bFlat = document.getElementById('v-flat'), bGlobe = document.getElementById('v-globe');
+function setView(v){
+  S.view = v;
+  bFlat.classList.toggle('on', v === 'flat');
+  bGlobe.classList.toggle('on', v === 'globe');
+  repaint();
+}
+bFlat.addEventListener('click', () => setView('flat'));
+bGlobe.addEventListener('click', () => setView('globe'));
+
+/* 拖动转地球：像素 -> 经纬度增量，按当前缩放换算 */
+svg.addEventListener('pointerdown', e => {
+  if (S.view !== 'globe') return;
+  drag = { x:e.clientX, y:e.clientY, rot:rot.slice() };
+  svg.setPointerCapture(e.pointerId);
+});
+svg.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const k = 260 / projection().scale();     // 半径越大，同样像素转的角度越小
+  rot = [ drag.rot[0] + (e.clientX - drag.x) * k * 0.9,
+          Math.max(-85, Math.min(85, drag.rot[1] - (e.clientY - drag.y) * k * 0.9)) ];
+  repaint();
+});
+addEventListener('pointerup', () => { drag = null; });
+
+document.getElementById('foot').innerHTML =
+  '海岸线数据 Natural Earth 110m（TopoJSON 100K），投影用 d3-geo，线条全部过 rough.js。' +
+  '「简化」滑块控制抽稀阈值：数字越大点越少、抖动越明显、也越快；'
+  + '开「国界」会多画一层虚线内部边界，密度高但容易糊。<br>'
+  + '航线只依赖 <code>{起点, 终点}</code> 两个机场码，坐标查表得到 —— 手动录入即可，不读邮箱。';
+
+if (typeof rough === 'undefined') say('rough.js 没加载成功');
+else if (typeof d3 === 'undefined') say('d3-geo 没加载成功');
+else if (typeof topojson === 'undefined') say('topojson-client 没加载成功');
+else if (typeof WORLD_TOPO === 'undefined') say('地图数据 world-110m.js 没加载成功');
+else {
+  repaint();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(repaint);
+}
+</script>
+</body>
+</html>

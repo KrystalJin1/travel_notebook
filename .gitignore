@@ -1,0 +1,17 @@
+# ---- 构建产物：跑 python3 build.py 就能重新生成 ----
+
+# 字体子集的中间文件。inline.css 里已经把它们内联成 base64 了，两份没必要都进库
+prototype/fonts/_sub-*.woff2
+
+# 单文件导出，一份 800KB+。要发给别人时现跑 python3 build.py pages
+prototype/*.standalone.html
+
+# ---- 选型剩下的东西 ----
+
+# 字体候选（15MB），只有 build-glyph.py 那个调参对比页用得到，参数已定稿
+prototype/fonts/candidates/
+
+# ---- 杂物 ----
+.DS_Store
+__pycache__/
+*.pyc
