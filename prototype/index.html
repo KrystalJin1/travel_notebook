@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>旅行手帐</title>
+<meta name="theme-color" content="#efe9dd">
+<!-- 字体 base64 内联：Chrome 把 file:// 当不透明来源，外链字体会被 CORS 静默拦掉。
+     重新生成：python3 build-fonts.py -->
+<link rel="stylesheet" href="fonts/inline.css">
+<link rel="stylesheet" href="paper.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="app">
+
+<div id="app">
+  <!-- 侧栏 / 底部 tab。宽屏时书架常驻在这里，窄屏时只剩三个 tab（§4.8） -->
+  <div class="rail">
+    <nav class="tabs" id="tabs">
+      <a href="#/shelf">书架</a>
+      <a href="#/map">地图</a>
+      <a href="#/about">关于</a>
+    </nav>
+    <div id="rail-shelf"></div>
+  </div>
+
+  <!-- 调参条：默认藏起来，按 d 或访问 #debug 唤出。作品集第一眼不该看到滑块 -->
+  <div class="ctl">
+    <label>手抖 <input type="range" id="c-rough" min="0" max="3" step="0.1" value="1.2"><b id="v-rough">1.2</b></label>
+    <label>弯曲 <input type="range" id="c-bow" min="0" max="4" step="0.1" value="1.5"><b id="v-bow">1.5</b></label>
+    <label>笔粗 <input type="range" id="c-sw" min="0.6" max="3" step="0.1" value="0.8"><b id="v-sw">0.8</b></label>
+    <label><input type="checkbox" id="c-color" checked> 上色</label>
+    <label><input type="checkbox" id="c-hatch"> 排线填色</label>
+    <button id="c-seed">换一支笔</button>
+    <span class="hint" id="dbg">初始化中…</span>
+  </div>
+
+  <main id="main"></main>
+</div>
+
+<script src="vendor/rough.js"></script>
+
+<!-- 数据：bundle.js 是构建产物（python3 build-data.py），store.js 在它上面叠本机改动 -->
+<script src="data/bundle.js"></script>
+<script src="kernel.js"></script>
+<script src="trip.js"></script>
+<script src="store.js"></script>
+
+<!-- 手绘渲染引擎，跟风格样张页 hand-drawn.html 共用一份 -->
+<script src="sketch.js"></script>
+
+<!-- 路由 + 各个页面 -->
+<script src="app.js"></script>
+
+<!-- 标题手写渲染：字形轮廓过 rough.js。加 data-hand 即生效。
+     加了新标题文案想让它也抖：python3 build-handtype.py -->
+<script src="handtype.js"></script>
+
+</body>
+</html>

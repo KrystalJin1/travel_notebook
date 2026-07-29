@@ -1,0 +1,126 @@
+/* 纸面与卡片样式 —— index.html（手帐本）和 hand-drawn.html（风格样张）共用。
+   页面外壳样式在 app.css，别写到这里来。 */
+:root{
+  --sys:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC',sans-serif;
+  --hand:'MarkerGothic',var(--sys);
+  --display:'SmileySans',var(--sys);
+  --ink:#2f2c26;
+  --ink2:#7d7566;
+  --ink3:#a89e8c;
+  --paper:#fdfbf5;
+  --stage:#efe9dd;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--hand);background:var(--stage);color:var(--ink);
+  line-height:1.75;padding:36px 24px 96px;-webkit-font-smoothing:antialiased;
+}
+.page{max-width:1120px;margin:0 auto}
+.page-head{max-width:760px;margin-bottom:26px}
+.page-head h1{font-size:38px;line-height:1.25;margin-bottom:10px}
+.page-head p{color:#5d564a;font-size:15px;margin-bottom:6px}
+.page-head code{background:#e2dbcb;padding:1px 6px;font-size:13px}
+
+/* ---------- 调节面板 ---------- */
+.ctl{
+  position:sticky;top:0;z-index:50;margin:0 0 30px;padding:12px 16px;
+  background:var(--paper);display:flex;flex-wrap:wrap;gap:18px;align-items:center;
+  font-size:13px;color:#5d564a;
+  /* 调试面板：故意用普通 CSS 描边，不挂 rough.js 覆盖层，避免遮住滑块 */
+  border-bottom:1px dashed #d3c7ae;
+}
+.ctl label{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.ctl input[type=range]{width:104px;accent-color:#8a6d4a}
+.ctl b{font-family:var(--display);color:var(--ink);min-width:26px;display:inline-block}
+.ctl button{
+  font-family:var(--hand);font-size:13px;background:#f1ead9;cursor:pointer;
+  color:var(--ink);padding:5px 14px;border:1px dashed #b3a894;border-radius:3px;
+}
+.ctl .hint{color:var(--ink3);font-size:12px}
+
+/* ---------- 手绘描边容器：SVG 覆盖层由 JS 画上去 ---------- */
+[data-frame]{position:relative}
+[data-frame] > svg.frame{
+  position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:0;
+}
+[data-frame] > *:not(svg.frame){position:relative;z-index:1}
+
+/* ---------- 布局 ---------- */
+.grid{display:grid;grid-template-columns:1.32fr 1fr;gap:30px;align-items:start}
+@media (max-width:920px){.grid{grid-template-columns:1fr}}
+
+/* ---------- 卡片 ---------- */
+.card{background:var(--paper);padding:28px 26px 24px}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:.14em;color:var(--ink2);margin-bottom:8px}
+.title{font-size:34px;line-height:1.2;letter-spacing:.01em}
+/* 待出行还没发生，标题淡一档：墨色兑水，像铅笔稿还没描实 */
+.title.plan{color:#8b8271}
+.subtitle{font-size:14px;color:var(--ink2);margin-bottom:16px}
+.meta-row{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:20px}
+.chip{font-size:13px;padding:2px 11px 3px;color:#4d463a;line-height:1.5}
+
+/* ---------- 照片 / 插画 ---------- */
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:16px}
+.ph{background:#fff;padding:7px 7px 22px}
+.ph:nth-child(1){transform:rotate(-1.6deg)}
+.ph:nth-child(2){transform:rotate(1.1deg) translateY(4px)}
+.ph:nth-child(3){transform:rotate(-.6deg)}
+.ph .cap{font-size:11.5px;color:var(--ink2);position:absolute;bottom:4px;left:0;right:0;text-align:center;z-index:2}
+svg.art{display:block;width:100%;height:auto}
+
+/* ---------- 手写笔记 ---------- */
+.note{font-size:16px;line-height:32px;color:#453f34;padding-top:3px}
+.note em{font-style:normal;background:linear-gradient(transparent 62%,#f6dfa4 62%)}
+
+/* ---------- 逐日行程 ---------- */
+.days{margin:2px 0 16px}
+.day-row{display:flex;gap:10px;align-items:baseline;font-size:14px;padding:3px 0;color:#453f34}
+.day-row.folded{display:none}
+.days.open .day-row.folded{display:flex}
+.day-badge{font-family:var(--display);font-size:12px;letter-spacing:.06em;color:var(--ink2);
+  flex:none;width:22px}
+.fold-toggle{display:inline-block;font-size:12.5px;color:var(--ink2);cursor:pointer;
+  margin:4px 0 0 32px;border-bottom:1px dashed var(--ink2)}
+
+/* ---------- 航段条（已旅行卡片用的紧凑版） ---------- */
+.legs{margin:6px 0 4px}
+.leg-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13.5px}
+.leg-row.plan{color:var(--ink2)}
+.leg-ico{width:20px;flex:none;opacity:.85}
+.leg-code{font-family:var(--display);font-size:15px;letter-spacing:.05em;flex:none}
+.leg-city{color:var(--ink2);flex:1;font-size:12.5px}
+.leg-date{color:var(--ink2);font-size:12.5px;flex:none}
+
+/* ---------- 倒计时 ---------- */
+.countdown{display:inline-block;font-size:13.5px;padding:4px 13px 5px;margin-bottom:16px;
+  color:#4d463a}
+
+/* ---------- 数据 ---------- */
+.stats{display:flex;gap:28px;flex-wrap:wrap;margin-top:18px;padding-top:16px}
+.stat-n{font-size:26px;line-height:1.15}
+.stat-l{font-size:12px;color:var(--ink2);letter-spacing:.04em}
+
+/* ---------- 航线 ---------- */
+.route{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.route-code{font-family:var(--display);font-size:22px;letter-spacing:.04em}
+.route-city{font-size:12px;color:var(--ink2)}
+.route-arc{flex:1}
+
+/* ---------- 计划条目 ---------- */
+.plan-item{display:flex;align-items:flex-start;gap:11px;font-size:14.5px;padding:11px 0}
+.plan-item .ico{width:22px;height:22px;flex:none;margin-top:3px}
+.bar{height:12px;position:relative}
+.btn{display:inline-block;font-size:15px;padding:8px 22px;margin-top:18px;cursor:pointer}
+
+/* ---------- 贴纸墙 ---------- */
+.sticker-wall{background:var(--paper);padding:24px 22px 20px;margin-top:34px}
+.sticker-wall h3{font-size:19px;margin-bottom:4px}
+.sticker-wall p{font-size:13.5px;color:var(--ink2);margin-bottom:16px}
+.stickers{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:14px}
+.sticker{text-align:center}
+.sticker .art{width:76px;margin:0 auto}
+.sticker span{display:block;font-size:12px;color:var(--ink2);margin-top:2px}
+
+/* ---------- washi 胶带 ---------- */
+.tape{position:absolute;width:112px;height:28px;z-index:3;pointer-events:none}
+.tape svg{display:block;overflow:visible}

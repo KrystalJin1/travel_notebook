@@ -13,7 +13,7 @@ import re
 import sys
 
 HERE = pathlib.Path(__file__).parent
-PAGES = ["hand-drawn.html", "map.html"]
+PAGES = ["index.html", "hand-drawn.html", "map.html"]
 
 
 def build(name: str):

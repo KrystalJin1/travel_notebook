@@ -28,6 +28,8 @@ FACE = HERE / "fonts" / "LXGWMarkerGothic-Regular.ttf"
 FAMILY = "MarkerGothic"
 PAGES = ["hand-drawn.html", "map.html"]
 TRIPS = "data/trips.json"
+# 外壳里也有走 data-hand 的标题：封面书名、新建一趟时的默认标题。它们不在 trips.json 里
+EXTRA = "旅行手帐新的一趟未命名"
 
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 PUNCT = "·—…、。，；：？！（）「」『』【】《》“”‘’～￥°※→←↑↓○●★☆"
@@ -38,7 +40,7 @@ def wanted_chars() -> list:
 
     只取 trips[].title：手写体只用在 data-hand 的标题上，把整个 json 塞进来
     会让 handtype.js 白胖一圈。"""
-    s = set(ASCII + PUNCT)
+    s = set(ASCII + PUNCT + EXTRA)
     for p in PAGES:
         f = HERE / p
         if f.exists():

@@ -31,8 +31,11 @@ def gb2312_level1():
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 PUNCT = "·—…、。，；：？！（）「」『』【】《》〈〉“”‘’～￥°※→←↑↓○●◎★☆　"
 LATIN_EXTRA = "①②③④⑤⑥⑦⑧⑨⑩ºªµ×÷±"
-# 卡片文案来自 data/*.json（不再写在 html 里），漏了这两个文件就会掉字
-SOURCES = ["hand-drawn.html", "data/trips.json", "data/places.json"]
+# 会出现在页面上的字都得扫一遍：文案散在 html / js / data 三处，漏一个文件就掉字。
+# 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、test-page.js（只在终端里）。
+SOURCES = ["index.html", "hand-drawn.html", "map.html",
+           "app.js", "store.js", "trip.js", "kernel.js", "sketch.js",
+           "data/trips.json", "data/places.json"]
 
 
 def used_chars() -> str:
