@@ -26,8 +26,6 @@
   }
 
   const money = n => '¥' + T.fmtMoney(n);
-  const chip = (txt, seed) => h('span',
-    { class: 'chip', 'data-frame': 'rect', 'data-seed': seed, text: txt });
 
   // 点了就走，键盘也能走 —— 时间轴上的每一趟都是一个按钮
   function tappable(el, fn) {
@@ -82,21 +80,22 @@
 
   /* ================= 四、书架：竖向时间轴 ================= */
 
+  /* 书架上一行 = 一趟。这里故意不给每个数字套手绘框：一屏十几个抖动的小方框
+     会把版面搅花，手绘留给外框那一个，数字排成一行小字（§4.8 规整优先）。 */
   function strip(t) {
     const v = T.derive(t, ST.ctx()), plan = t.status === 'planned';
-    const sd = key => K.seedOf(t.seed, key);
     const facts = plan
       ? [v.countdown > 0 ? '距出发 ' + v.countdown + ' 天' : '就要走了',
          '预算 ' + money(v.budget), '想去 ' + v.wishlist.length + ' 个']
-      : [v.days + ' 天', v.cities.length + ' 个城市',
-         v.media.length + ' 张照片', money(v.spendTotal)];
+      : [v.days + ' 天', v.cities.length + ' 城市',
+         v.media.length + ' 照片', money(v.spendTotal)];
 
     const item = h('div', { class: 'tl-item' + (plan ? ' plan' : '') }, [
       h('div', { class: 'strip', 'data-frame': 'rect', 'data-seed': t.seed }, [
-        h('span', { class: 'go', text: '→' }),
         h('div', { class: 'when', text: v.dateLabel }),
         h('div', { class: 'name' + (plan ? ' plan' : ''), 'data-hand': true, text: t.title }),
-        h('div', { class: 'facts' }, facts.map(f => chip(f, sd('f' + f))))
+        h('div', { class: 'facts', text: facts.join('　·　') }),
+        h('span', { class: 'go', text: '→' })
       ])
     ]);
     return tappable(item, () => go('#/trip/' + t.id));
@@ -139,13 +138,12 @@
   }
 
   // 花费明细按类目（§4.1 的数字条给总额，这里给构成）
+  // 列表行用普通细线，不用手绘线：连着十几行抖动的横线只会显得花
   function moneyBlock(v) {
     if (!v.byCat.length) return null;
-    const sd = key => K.seedOf(v.trip.seed, key);
     return h('div', { class: 'editor' }, [
       h('h3', { text: '钱花在哪儿了' }),
-      ...v.byCat.map((c, i) => h('div', { class: 'money-cat', 'data-frame': 'hr-b',
-        'data-seed': sd('cat' + i) }, [
+      ...v.byCat.map(c => h('div', { class: 'money-cat' }, [
         h('span', { text: c.category }),
         h('b', { text: money(c.amount) + ' · ' + Math.round(c.amount / v.spendTotal * 100) + '%' })
       ])),
@@ -366,8 +364,7 @@
       const v = T.derive(t, ST.ctx());
       for (const l of v.legs) {
         km += l.km;
-        rows.push(h('div', { class: 'money-cat', 'data-frame': 'hr-b',
-          'data-seed': K.seedOf(t.seed, 'm' + l.entry.id) }, [
+        rows.push(h('div', { class: 'money-cat' }, [
           h('span', { text: l.from + ' → ' + l.to + '　' + l.fromName + ' – ' + l.toName }),
           h('b', { text: l.km ? T.fmtMoney(l.km) + ' km' : (l.unknown ? '查不到坐标' : '—') })
         ]));

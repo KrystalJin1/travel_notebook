@@ -408,10 +408,13 @@ function checkShell() {
   env.location.hash = '';
   ok(App.parse().name === 'cover', '空 hash 应该是封面');
 
-  // 手绘线：外壳这几页也得有描边和插图，别只有裸 div
+  // 手绘线：外壳这几页也得有描边和插图，别只有裸 div。
+  // 书架上的数字故意不再各自套框（一屏十几个抖动小方框会花），
+  // 所以这里只剩「每趟一个外框 + 新建按钮」
   nav('#/shelf');
   const frames = document.querySelectorAll('[data-frame]');
-  ok(frames.length >= 5, '书架上的描边宿主太少：' + frames.length);
+  ok(frames.length >= 3, '书架上的描边宿主太少：' + frames.length);
+  ok(!document.querySelectorAll('.strip .chip').length, '书架上的数字又套回手绘框了');
   ok(!frames.filter(f => !f.children.some(c => c.nodeName === 'svg')).length,
     '书架上有框没描上');
 }

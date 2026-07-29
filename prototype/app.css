@@ -33,47 +33,56 @@ body{padding:0;min-height:100dvh}
 .topbar h2{font-size:19px;flex:1;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .topbar .act{font-size:13.5px;color:#6b5a3e;cursor:pointer;flex:none;padding:4px 10px}
 
-/* ---------- 书架：竖向时间轴 ---------- */
+/* ---------- 书架：竖向时间轴 ----------
+   规整优先：一屏里只有「外框」是手绘的，日期 / 数字都靠对齐和字号分层级，
+   不再给每个小数字套抖动的方框（那样一屏十几个框会花掉）。 */
 .sec-label{font-family:var(--display);font-size:12px;letter-spacing:.16em;
-  color:var(--ink2);margin:22px 0 4px}
-.tl{position:relative;padding-left:26px}
-.tl::before{content:'';position:absolute;left:6px;top:8px;bottom:12px;width:0;
-  border-left:1.5px dashed #cdbfa4}
-.tl-item{position:relative;margin-bottom:14px;cursor:pointer;
+  color:var(--ink2);margin:6px 0 8px}
+.sec-label + .tl,.sec-label + .empty{margin-top:0}
+.tl{position:relative;padding-left:22px;margin-bottom:24px}
+.tl::before{content:'';position:absolute;left:4px;top:14px;bottom:14px;width:0;
+  border-left:1px solid #dcd1bb}
+.tl-item{position:relative;margin-bottom:12px;cursor:pointer;
   transition:transform .12s ease-out}
-.tl-item::before{content:'';position:absolute;left:-24px;top:22px;width:9px;height:9px;
-  border-radius:50%;background:var(--paper);border:1.5px solid var(--ink2)}
+.tl-item::before{content:'';position:absolute;left:-22px;top:24px;width:7px;height:7px;
+  border-radius:50%;background:var(--paper);border:1.5px solid var(--ink3)}
 .tl-item.plan::before{background:var(--stage)}
 .tl-item:active{transform:scale(.985) translateX(1px)}   /* 按下即有反馈（§4.8） */
-.strip{background:var(--paper);padding:15px 16px 13px}
-.strip .when{font-family:var(--display);font-size:12px;letter-spacing:.08em;color:var(--ink2)}
-.strip .name{font-size:26px;line-height:1.2;margin:1px 0 7px}
+.strip{background:var(--paper);padding:14px 34px 13px 16px}
+.strip .when{font-family:var(--display);font-size:11.5px;letter-spacing:.1em;color:var(--ink3)}
+.strip .name{font-size:25px;line-height:1.22;margin:2px 0 5px}
 .strip .name.plan{color:#8b8271}
-.strip .facts{display:flex;flex-wrap:wrap;gap:7px}
-.strip .go{float:right;font-size:13px;color:var(--ink3);margin-top:-22px}
-.add{margin:16px 0 4px;text-align:center;font-size:15px;padding:11px;cursor:pointer;
+.strip .facts{font-family:var(--display);font-size:12.5px;color:var(--ink2);
+  letter-spacing:.02em}
+.strip .go{position:absolute;right:14px;top:50%;margin-top:-11px;font-size:14px;color:var(--ink3)}
+.add{margin:2px 0 4px;text-align:center;font-size:15px;padding:11px;cursor:pointer;
   background:var(--paper)}
 
 /* ---------- 详情 ---------- */
 .detail{padding-bottom:10px}
 .detail .card{margin-bottom:16px}
-.money-cat{display:flex;justify-content:space-between;font-size:14px;padding:7px 0}
-.money-cat b{font-family:var(--display);font-weight:400}
+/* 明细列表：普通细线，一行一行对齐；手绘线只留给卡片里那几条 */
+.money-cat{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:8px 0;
+  border-bottom:1px solid #ece4d5}
+.money-cat:last-of-type{border-bottom:0}
+.money-cat b{font-family:var(--display);font-weight:400;white-space:nowrap}
 
 /* ---------- 编辑：表单就是「填数字」的地方 ---------- */
 .editor{background:var(--paper);padding:18px 16px 20px;margin-bottom:18px}
-.editor h3{font-size:17px;margin:16px 0 6px}
+.editor h3{font-size:17px;margin:18px 0 6px}
 .editor h3:first-child{margin-top:0}
 .editor .tip{font-size:12.5px;color:var(--ink2);margin-bottom:10px;line-height:1.6}
-.f{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:flex-end;padding:7px 0}
+.f{display:flex;flex-wrap:wrap;gap:10px 12px;align-items:flex-end;padding:8px 0}
+/* 每组之间一条细线，靠它分组，不靠一堆虚线格子 */
+.f + .f{border-top:1px solid #ece4d5}
 .f > label{flex:1 1 118px;font-size:12px;color:var(--ink2);min-width:0}
 .f > label.wide{flex:1 1 100%}
 .f > label.n{flex:0 0 92px}
 .f input,.f select,.f textarea{display:block;width:100%;margin-top:2px;padding:4px 2px;
   font-family:var(--hand);font-size:15px;color:var(--ink);background:transparent;
-  border:0;border-bottom:1.5px dashed #c9bda3;border-radius:0;-webkit-appearance:none;appearance:none}
+  border:0;border-bottom:1px solid #ddd2ba;border-radius:0;-webkit-appearance:none;appearance:none}
 .f input:focus,.f select:focus,.f textarea:focus{outline:none;background:#fffdf6;
-  border-bottom-color:#8a6d4a;border-bottom-style:solid}
+  border-bottom-color:#8a6d4a;border-bottom-width:1.5px}
 .f input.num{font-family:var(--display);font-size:18px;letter-spacing:.02em}
 .f input[type=checkbox]{width:auto;display:inline-block;accent-color:#8a6d4a;margin-right:5px}
 .f textarea{min-height:76px;line-height:1.7;resize:vertical}
@@ -84,7 +93,7 @@ body{padding:0;min-height:100dvh}
 
 /* ---------- 底部 tab ---------- */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:60;display:flex;
-  background:var(--paper);border-top:1.5px dashed #cdbfa4;padding-bottom:env(safe-area-inset-bottom)}
+  background:var(--paper);border-top:1px solid #dcd1bb;padding-bottom:env(safe-area-inset-bottom)}
 .tabs a{flex:1;text-align:center;padding:11px 4px 12px;font-size:13px;color:var(--ink2);
   text-decoration:none}
 .tabs a.on{color:var(--ink)}
@@ -110,7 +119,7 @@ body.at-cover .rail{display:none}
   body.at-cover #main{grid-column:1/-1}
   .ctl{grid-column:1/-1}
   .rail{grid-column:1;position:sticky;top:16px}
-  .tabs{position:static;background:none;border:0;border-bottom:1.5px dashed #cdbfa4;
+  .tabs{position:static;background:none;border:0;border-bottom:1px solid #dcd1bb;
     margin-bottom:10px}
   .tabs a{text-align:left;padding:9px 2px}
   .tabs a.on::after{margin-left:0}
