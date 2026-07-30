@@ -34,7 +34,7 @@ LATIN_EXTRA = "①②③④⑤⑥⑦⑧⑨⑩ºªµ×÷±"
 # 会出现在页面上的字都得扫一遍：文案散在 html / js / data 三处，漏一个文件就掉字。
 # 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、test-page.js（只在终端里）。
 SOURCES = ["index.html", "hand-drawn.html", "map.html",
-           "app.js", "store.js", "trip.js", "kernel.js", "sketch.js",
+           "app.js", "store.js", "trip.js", "kernel.js", "sketch.js", "map.js",
            "data/trips.json", "data/places.json"]
 
 

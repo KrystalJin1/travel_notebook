@@ -19,6 +19,7 @@
     <nav class="tabs" id="tabs">
       <a href="#/shelf">书架</a>
       <a href="#/map">地图</a>
+      <a href="#/stats">足迹</a>
       <a href="#/about">关于</a>
     </nav>
     <div id="rail-shelf"></div>
@@ -40,6 +41,13 @@
 
 <script src="vendor/rough.js"></script>
 
+<!-- 地图：d3-geo 投影 + topojson 解 Natural Earth 110m。只有 #/map 用得到，
+     但 file:// 下不能按需 import，所以照旧一起加载（合计约 150KB）。 -->
+<script src="vendor/d3-array.min.js"></script>
+<script src="vendor/d3-geo.min.js"></script>
+<script src="vendor/topojson-client.min.js"></script>
+<script src="data/world-110m.js"></script>
+
 <!-- 数据：bundle.js 是构建产物（python3 build-data.py），store.js 在它上面叠本机改动 -->
 <script src="data/bundle.js"></script>
 <script src="kernel.js"></script>
@@ -48,13 +56,16 @@
 
 <!-- 手绘渲染引擎，跟风格样张页 hand-drawn.html 共用一份 -->
 <script src="sketch.js"></script>
+<script src="map.js"></script>
+
+<!-- 标题手写渲染：字形轮廓过 rough.js。加 data-hand 即生效。
+     加了新标题文案想让它也抖：python3 build-handtype.py
+     放在 app.js 前面：第一次 render() 就要能调 window.handtype()，
+     案例页也要数得出 HANDTYPE_GLYPH 里有多少个字形。 -->
+<script src="handtype.js"></script>
 
 <!-- 路由 + 各个页面 -->
 <script src="app.js"></script>
-
-<!-- 标题手写渲染：字形轮廓过 rough.js。加 data-hand 即生效。
-     加了新标题文案想让它也抖：python3 build-handtype.py -->
-<script src="handtype.js"></script>
 
 </body>
 </html>

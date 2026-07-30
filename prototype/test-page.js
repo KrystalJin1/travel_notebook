@@ -206,7 +206,10 @@ function runPage(page, extra) {
     document, console,
     // handtype 用它取字号/颜色；stub 量不出版式，给个固定值
     getComputedStyle: () => ({ fontSize: '32px', color: '#2f2c26', lineHeight: '' }),
-    setTimeout: () => 0, clearTimeout() {}, addEventListener() {}
+    // 立刻执行：页面里的 setTimeout 都是「等排版好了再画一次」（地图的首帧就是），
+    // 不跑的话地图这一层在断言里永远是空的
+    setTimeout: fn => { if (typeof fn === 'function') fn(); return 0; },
+    clearTimeout() {}, addEventListener() {}
   }, extra || {}));
   ctx.window = ctx.self = ctx;      // rough.js / kernel.js / trip.js 都挂在 window 上
   for (const s of scriptsOf(page))
@@ -331,7 +334,8 @@ function checkShell() {
   ok(document.getElementById('tabs').getElementsByTagName('a')[0]
     .classList.contains('on'), '书架 tab 没点亮');
 
-  const plan = ST.data.trips.filter(t => t.status === 'planned')[0];
+  const plan = ST.data.trips.filter(t =>
+    TV.statusOf(t, ST.ctx().now) === 'planned')[0];
   nav('#/trip/' + plan.id);
   ok(byClass(main, 'card').length === 1, '详情页应该只画这一趟');
   ok(text().indexOf(plan.title) >= 0, '详情页没显示标题：' + plan.title);
@@ -369,14 +373,56 @@ function checkShell() {
     }
   }
 
-  // 改状态就换一套卡片版式（待出行 -> 已旅行）
-  const st = fieldNamed(main, '状态');
-  if (ok(!!st, '找不到「状态」下拉框')) {
-    st.value = 'done';
-    st._fire('change');
-    ok(byClass(main, 'stats').length === 1, '改成已旅行之后没换成数字条那套卡片');
-    st.value = 'planned';
-    st._fire('change');
+  /* 状态机（§3.2）：planned → ongoing → done 按日期自己走，锁住的不动 */
+  const pastTime = { start: '2020-01-01', end: '2020-01-05' };
+  ok(TV.statusOf({ status: 'planned', time: pastTime }, ST.ctx().now) === 'done',
+    '出发和结束都过去了，应该自己变成已旅行');
+  ok(TV.statusOf({ status: 'planned', time: { start: '2099-01-01' } }, ST.ctx().now) === 'planned',
+    '还没到出发日就该留在待出行');
+  ok(TV.statusOf({ status: 'planned', time: { start: ST.today(-1), end: ST.today(1) } },
+    ST.ctx().now) === 'ongoing', '出发了还没回来，应该是旅行中');
+  ok(TV.statusOf({ status: 'planned', data: { lockStatus: true }, time: pastTime },
+    ST.ctx().now) === 'planned', '锁住的状态不许被日期推走');
+  ok(TV.statusOf({ status: 'cancelled', time: pastTime }, ST.ctx().now) === 'cancelled',
+    '取消了的行程不许被推成已旅行');
+
+  /* 编辑器里只改日期：不碰状态框，卡片和书架分栏自己跟着换 */
+  const statusOfPlan = () => TV.derive(ST.trip(plan.id), ST.ctx()).status;
+  const setField = (label, val) => {
+    const el = fieldNamed(main, label);
+    if (!el) return false;
+    el.value = val;
+    el._fire('change');
+    return true;
+  };
+  const keepTime = [ST.trip(plan.id).time.start, ST.trip(plan.id).time.end];
+  if (ok(!!fieldNamed(main, '状态') && !!fieldNamed(main, '开始'), '编辑器里少了状态 / 开始')) {
+    setField('开始', pastTime.start);
+    setField('结束', pastTime.end);
+    ok(statusOfPlan() === 'done', '日期改到过去，状态机没把它推成已旅行');
+    ok(byClass(main, 'stats').length === 1, '推成已旅行之后卡片没换成数字条那一套');
+
+    // 正在走的那趟单独一栏
+    setField('开始', ST.today(-1));
+    setField('结束', ST.today(1));
+    ok(statusOfPlan() === 'ongoing', '出发了还没回来应该是旅行中，实际 ' + statusOfPlan());
+    ok(text().indexOf('旅行中') >= 0 && text().indexOf('第 2 天') >= 0,
+      '旅行中的卡片上应该写着「旅行中」和今天是第几天');
+    nav('#/shelf');
+    ok(text().indexOf('旅行中 · NOW') >= 0, '书架上没有「旅行中」这一栏');
+    nav('#/trip/' + plan.id + '/edit');
+
+    // 锁回待出行：日期还在今天，但用户说了算
+    setField('状态', 'planned');
+    ok(statusOfPlan() === 'planned', '锁定之后应该停在待出行');
+    ok(!byClass(main, 'stats').length, '锁回待出行之后卡片没换回计划那一套');
+
+    // 交还给日期，日期也放回去 —— 后面的断言还要用这一趟
+    setField('状态', 'auto');
+    ok(!(ST.trip(plan.id).data || {}).lockStatus, '选了「跟着日期走」就该把锁去掉');
+    setField('开始', keepTime[0]);
+    setField('结束', keepTime[1]);
+    ok(statusOfPlan() === 'planned', '日期放回未来应该回到待出行');
   }
 
   // 本机改动落到 localStorage，刷新还在
@@ -393,11 +439,107 @@ function checkShell() {
       '新建完应该直接进编辑页，实际 ' + env.location.hash);
   }
 
+  /* 新建的一趟：标题留空，提示走 placeholder。
+     写成 value（以前是「新的一趟」）用户点开第一件事是删字 —— 这条断言就是防它回去。 */
+  const fresh = ST.data.trips[ST.data.trips.length - 1];
+  ok(fresh.title === '', '新建的一趟标题应该是空的，实际「' + fresh.title + '」');
+  App.render();
+  const ti = fieldNamed(main, '标题');
+  if (ok(!!ti, '编辑器里找不到「标题」输入框')) {
+    ok(ti.value === '', '新建的一趟，标题框里不该预填文字：「' + ti.value + '」');
+    ok(!!ti.attrs.placeholder, '标题框得有占位提示告诉用户填什么');
+  }
+  ok(text().indexOf('未命名') >= 0, '标题空着的时候，页面上得有「未命名」兜底');
+  // 顶栏那个「完成 ✓」太小，编辑器底下还得有个大的出口
+  const bigDone = byClass(main, 'done-edit')[0];
+  if (ok(!!bigDone, '编辑器底下缺一个明显的「完成」按钮')) {
+    bigDone._fire('click');
+    ok(env.location.hash === '#/trip/' + fresh.id,
+      '点完成应该回这一趟的详情页，实际 ' + env.location.hash);
+  }
+  // 新填的东西一律留空，不给假默认值
+  const bl = ST.blank('spend');
+  ok(bl.title === '' && ST.blank('note').body === '' && ST.blank('place').place.name === '',
+    'blank() 不该再给「新的一笔」这种假文字');
+
   // 剩下两个入口不许一点就白屏
   nav('#/map');
   ok(text().indexOf('航线一览') >= 0, '地图页没渲染');
+
+  /* 地图上的线必须来自用户真填的 leg：条数和 atlas 对得上，
+     统计数字（段数 / 城市 / 公里 / 趟数）也全是现算的 */
+  const at = TV.atlas(ST.data.trips, ST.ctx());
+  ok(at.routes.length > 0, 'atlas 一条航线都没算出来');
+  ok(byClass(main, 'money-cat').length === at.routes.length,
+    '航线一览 ' + byClass(main, 'money-cat').length + ' 行 ≠ atlas ' + at.routes.length + ' 段');
+  ok(text().indexOf('已飞 ' + at.flownCount + ' 段') >= 0
+    && text().indexOf(at.cities.length + ' 座城市') >= 0
+    && text().indexOf(TV.fmtMoney(at.km) + ' 公里') >= 0
+    && text().indexOf(ST.data.trips.length + ' 趟') >= 0, '地图页的统计数字不是现算的');
+  ok(at.routes.every(r => r.fromLL && r.toLL), '画出来的航线里有查不到坐标的');
+  ok(!at.unknown.length || text().indexOf(at.unknown[0]) >= 0,
+    '查不到坐标的码应该在页面上列出来，不许静默丢掉');
+
+  // 真地图真画出来了：陆地 + 每段航线 + 每座城市的热区都在 svg 里
+  // （stub 的 fragment 不会摊平，所以数整棵子树而不是 svg.children）
+  const mapSvg = svgOf(byClass(main, 'map-stage')[0] || new El('div'));
+  if (ok(!!mapSvg && all(mapSvg).length > 20, '地图 svg 是空的（依赖没加载？）')) {
+    const titles = all(mapSvg).filter(n => n.tagName === 'TITLE').map(n => n.textContent);
+    ok(titles.length === at.routes.length + at.cities.length,
+      '可点热区 ' + titles.length + ' 个 ≠ 航线 ' + at.routes.length
+      + ' + 城市 ' + at.cities.length);
+    ok(titles.some(s => s.indexOf(at.routes[0].from + ' → ' + at.routes[0].to) >= 0),
+      '航线热区上没有起降码：' + titles.slice(0, 3).join(' / '));
+  }
+
+  /* 足迹总览：每个数字都能从 Store 现算出来 */
+  nav('#/stats');
+  const sm = TV.summary(ST.data.trips, ST.ctx());
+  ok(byClass(main, 'big').length === 6, '足迹页应该有 6 个大数字，实际 ' + byClass(main, 'big').length);
+  for (const s of [String(sm.done.length), String(sm.days), TV.fmtMoney(sm.atlas.kmFlown),
+                   TV.fmtMoney(sm.spend)])
+    ok(text().indexOf(s) >= 0, '足迹页上找不到现算出来的「' + s + '」');
+  ok(byClass(main, 'bar-row').length === sm.byYear.length + sm.byCat.length,
+    '足迹页的条数 ' + byClass(main, 'bar-row').length + ' ≠ 年份 ' + sm.byYear.length
+    + ' + 类目 ' + sm.byCat.length);
+  ok(byClass(main, 'bar-row').every(r =>
+    r.children.some(c => c.attrs['data-pct'] != null)), '有条没算出宽度');
+
+  /* 照片大图：从卡片上的缩略图点进去，左右能翻页，序号跟墙上一致 */
+  const withPhoto = ST.data.trips.filter(t =>
+    TV.wallPhotos(TV.derive(t, ST.ctx())).length > 1)[0];
+  if (ok(!!withPhoto, '示例数据里应该有一趟不止一张照片')) {
+    const wall = TV.wallPhotos(TV.derive(withPhoto, ST.ctx()));
+    nav('#/trip/' + withPhoto.id);
+    const thumbs = document.querySelectorAll('[data-ph]');
+    ok(thumbs.length === wall.length,
+      '照片墙 ' + thumbs.length + ' 张 ≠ wallPhotos ' + wall.length + ' 张');
+    thumbs[1]._fire('click');
+    ok(env.location.hash === '#/trip/' + withPhoto.id + '/photo/1',
+      '点第二张应该开第 1 号大图，实际 ' + env.location.hash);
+    App.render();
+    ok(byClass(main, 'lb-fig').length === 1, '大图那一层没渲染出来');
+    ok(text().indexOf('2 / ' + wall.length) >= 0, '大图上没显示第几张 / 共几张');
+    // 翻页：每一号都得画得出来
+    for (let i = 1; i < wall.length; i++) nav('#/trip/' + withPhoto.id + '/photo/' + i);
+    ok(byClass(main, 'lb-fig').length === 1, '翻到最后一张大图空了');
+  }
+
+  /* 案例页（M6）：讲技术不讲行程，而且它自己夸的「数字只有一处出处」得当真 ——
+     上面那几个大号数字必须跟仓库现算的一致，不许写死在文案里 */
   nav('#/about');
-  ok(text().indexOf('怎么做的') >= 0, '关于页没渲染');
+  ok(byClass(main, 'about-pt').length === 3, '案例页应该写着三处技术重点');
+  const bigs = byClass(main, 'big-n').map(e => e.textContent);
+  const entryTotal = ST.data.trips.reduce((n, t) => n + (t.entries || []).length, 0);
+  const sum = TV.summary(ST.data.trips, ST.ctx());
+  ok(bigs.indexOf(String(ST.data.trips.length)) >= 0, '案例页上没写现在有几趟旅行');
+  ok(bigs.indexOf(String(entryTotal)) >= 0,
+    '案例页写的记录数跟仓库对不上，应该是 ' + entryTotal + '，实际 ' + bigs.join('/'));
+  ok(bigs.indexOf(String(sum.atlas.routes.length)) >= 0, '案例页写的航线段数跟 atlas() 对不上');
+  ok(bigs.indexOf(String(Object.keys(ctx.HANDTYPE_GLYPH || {}).length)) >= 0,
+    '案例页写的字形数跟 handtype.js 对不上（handtype.js 得在 app.js 前面加载）');
+  ok(text().indexOf('已飞') >= 0 && text().indexOf('公里') >= 0,
+    '案例页应该把 atlas() / summary() 的数字摊出来');
   nav('#/debug');
   ok(document.body.classList.contains('debug'), '#debug 没唤出调参条');
 
@@ -417,6 +559,19 @@ function checkShell() {
   ok(!document.querySelectorAll('.strip .chip').length, '书架上的数字又套回手绘框了');
   ok(!frames.filter(f => !f.children.some(c => c.nodeName === 'svg')).length,
     '书架上有框没描上');
+
+  // 新加的三页也一样：框都得描上，插图都得画出来（空 svg 就是渲染事故）
+  for (const hash of ['#/map', '#/stats', '#/trip/' + withPhoto.id + '/photo/0']) {
+    nav(hash);
+    const fs2 = document.querySelectorAll('[data-frame]');
+    ok(fs2.length >= 1, hash + ' 上一个手绘框都没有');
+    ok(!fs2.filter(f => !f.children.some(c => c.nodeName === 'svg' && c.attrs.class === 'frame'))
+      .length, hash + ' 上有框没描上');
+    const arts = document.querySelectorAll('[data-art]')
+      .filter(a => a.parentNode && a.parentNode !== document.body);
+    ok(!arts.filter(a => { const s = svgOf(a); return !s || !s.children.length; }).length,
+      hash + ' 上有插图没画出来');
+  }
 }
 
 /* ==================== 四、导 svg（--svg） ==================== */

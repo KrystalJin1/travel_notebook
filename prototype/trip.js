@@ -41,6 +41,28 @@
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
+  /* ---------- 状态机（§3.2）：planned → ongoing → done ----------
+     数据里的 status 只是用户手写的那一笔，卡片用哪一套版式由日期算出来 ——
+     否则去年出发的那趟今天还挂在「待出行」下面，得靠人一个个去改。
+     两种情况不推进：
+       · cancelled —— 行程取消了，停在原地（需求文档说的「手动锁定」）
+       · data.lockStatus —— 用户明确说「就按我填的算」
+     没填开始日期的按存的算：猜不出来就不猜。 */
+  const STATUS_LABEL = { planned: '待出行', ongoing: '旅行中', done: '已旅行', cancelled: '已取消' };
+  // 「待出行」那一栏收哪些：还没走的，和取消了的
+  const isPlan = s => s === 'planned' || s === 'cancelled';
+
+  function statusOf(trip, now) {
+    const raw = STATUS_LABEL[trip.status] ? trip.status : 'planned';
+    if (raw === 'cancelled' || (trip.data && trip.data.lockStatus)) return raw;
+    const a = K.parseTime(trip.time && trip.time.start);
+    if (!a) return raw;
+    const b = K.parseTime(trip.time && trip.time.end) || a;
+    const t = K.midnight(now || new Date());
+    if (t < K.midnight(a)) return 'planned';
+    return t <= K.midnight(b) ? 'ongoing' : 'done';
+  }
+
   function derive(trip, ctx) {
     const es = K.sorted(trip.entries || []);
     const rates = ctx.rates, base = ctx.baseCurrency, places = ctx.places;
@@ -53,6 +75,7 @@
         entry: e, from: d.from, to: d.to, mode: d.mode, code: d.code, flown: !!d.flown,
         fromName: from ? from.name : d.from, toName: to ? to.name : d.to,
         fromSub: from && from.sub, toSub: to && to.sub,
+        fromLL: from && from.ll, toLL: to && to.ll,       // 地图要的就是这两个坐标
         unknown: !from || !to,                       // 查不到坐标：提示用户手选
         km: d.mode === 'air' ? greatCircle(from, to) : 0,
         date: fmtDate(e.time && e.time.start)
@@ -77,7 +100,7 @@
 
     // 逐日行程：只列排了地点的那些天
     const itinerary = [...K.groupBy(scheduled, e => e.data.day)].sort((a, b) => a[0] - b[0])
-      .map(([day, list]) => ({ day, names: list.map(e => e.place && e.place.name || e.title) }));
+      .map(([day, list]) => ({ day, names: list.map(e => e.place && e.place.name || e.title || '还没写') }));
 
     const stays = K.byType(es, 'stay').map(e => ({
       entry: e, title: e.title, booked: !!(e.data && e.data.booked),
@@ -88,10 +111,16 @@
 
     const media = K.allMedia(es);
     const budget = trip.data && trip.data.budget || 0;
+    const status = statusOf(trip, now);
+    const untilStart = K.daysUntil(trip.time && trip.time.start, now);
 
     return {
       trip, entries: es, legs, spends, spendTotal, byCat, itinerary, wishlist, stays,
       days, media, base,
+      status, statusLabel: STATUS_LABEL[status],
+      statusLocked: status === 'cancelled' || !!(trip.data && trip.data.lockStatus),
+      // 旅行中的那趟：今天是第几天（卡片副标题用）
+      dayNow: status === 'ongoing' && untilStart != null ? 1 - untilStart : null,
       photoEntries: K.byType(es, 'photo').filter(e => (e.media || []).length),
       notes: K.byType(es, 'note'),
       cities: K.distinct(es.map(e => e.place && e.place.city)),
@@ -102,7 +131,7 @@
       budget,
       paid: spendTotal,
       pct: budget ? Math.min(100, Math.round(spendTotal / budget * 100)) : 0,
-      countdown: K.daysUntil(trip.time && trip.time.start, now),
+      countdown: untilStart,
       dateLabel: fmtDate(trip.time.start) + ' – ' + fmtDate(trip.time.end, false),
       unknownPlaces: legs.filter(l => l.unknown).map(l => l.unknown && (l.from + '→' + l.to))
     };
@@ -140,18 +169,23 @@
   /* ================= 三、卡片 ================= */
 
   // 照片墙：2~5 张，超出的不上墙（媒体总数仍然进数字条）
+  // data-ph = 在墙上的第几张。看大图那一页要用同一份名单同一个序号，
+  // 所以名单只在 wallPhotos() 里算一次，app.js 也用它。
+  const WALL = 5;
+  const wallPhotos = v => v.photoEntries.slice(0, WALL);
+
   function photoWall(v, sd) {
-    const list = v.photoEntries.slice(0, 5);
+    const list = wallPhotos(v);
     if (list.length < 1) return null;
-    return h('div', { class: 'photos' }, list.map(e => {
+    return h('div', { class: 'photos' }, list.map((e, i) => {
       const m = e.media[0], day = e.data && e.data.day;
       const inner = /^art:/.test(m.path)
         ? art(m.path.slice(4))
         : h('img', { class: 'art', src: m.path, alt: e.title || '' });
       const cap = [e.place && e.place.name || e.title, day ? 'D' + day : null]
         .filter(Boolean).join(' · ');
-      return h('div', { class: 'ph', 'data-frame': 'rect', 'data-seed': sd('ph' + e.id) },
-        [inner, h('div', { class: 'cap', text: cap })]);
+      return h('div', { class: 'ph', 'data-frame': 'rect', 'data-seed': sd('ph' + e.id),
+        'data-ph': i }, [inner, h('div', { class: 'cap', text: cap })]);
     }));
   }
 
@@ -192,14 +226,17 @@
     ])));
   }
 
-  function head(v, plan) {
-    const t = v.trip, d = t.data || {};
+  function head(v) {
+    const t = v.trip, d = t.data || {}, plan = isPlan(v.status);
     const sub = [v.dateLabel, v.days + ' 天', d.companions].filter(Boolean).join(' · ');
     return [
-      h('div', { class: 'eyebrow', text: (plan ? '待出行 · ' : '已旅行 · ') + (d.no || '') }),
-      h('div', { class: 'title' + (plan ? ' plan' : ''), 'data-hand': '', text: t.title }),
+      h('div', { class: 'eyebrow', text: [v.statusLabel, d.no].filter(Boolean).join(' · ') }),
+      h('div', { class: 'title' + (plan ? ' plan' : ''), 'data-hand': '', text: t.title || '未命名' }),
       h('div', { class: 'subtitle',
-        text: plan ? '预计 ' + fmtDate(t.time.start) + ' 出发 · ' + v.days + ' 天' : sub })
+        text: plan ? '预计 ' + fmtDate(t.time.start) + ' 出发 · ' + v.days + ' 天'
+          : v.status === 'ongoing'
+            ? '第 ' + v.dayNow + ' 天 / 共 ' + v.days + ' 天 · ' + v.dateLabel
+            : sub })
     ];
   }
 
@@ -222,7 +259,7 @@
     return h('div', { class: 'card', 'data-frame': 'rect', 'data-seed': t.seed }, [
       h('div', { class: 'tape', style: 'top:-14px;left:28px;transform:rotate(-4deg)',
         'data-tape': '#a8c8b4', 'data-seed': sd('tape') }),
-      ...head(v, false),
+      ...head(v),
       h('div', { class: 'meta-row' }, chips),
       photoWall(v, sd),
       dayList(v),
@@ -257,7 +294,7 @@
     const left = v.nightsTotal - v.nightsBooked;
     const rows = [
       ['ico-hotel', v.stays.length
-        ? v.stays[0].title + ' · 已订 ' + v.nightsBooked + ' 晚'
+        ? (v.stays[0].title || '住的地方') + ' · 已订 ' + v.nightsBooked + ' 晚'
           + (left > 0 ? '，剩 ' + left + ' 晚待定' : '，住宿已齐')
         : '还没订住的地方'],
       ['ico-cal', '日程 ' + v.scheduledDays + ' / ' + v.days + ' 天已排'
@@ -267,9 +304,9 @@
       { class: 'plan-item', 'data-frame': 'hr-b', 'data-seed': sd('row' + i) },
       [art(ico, 'ico'), h('div', { text: txt })]));
 
-    const cd = v.countdown;
+    const cd = v.status === 'cancelled' ? null : v.countdown;   // 取消了就不倒计时了
     return h('div', { class: 'card', 'data-frame': 'rect', 'data-seed': t.seed }, [
-      ...head(v, true),
+      ...head(v),
       cd != null && cd > 0
         ? h('div', { class: 'countdown', 'data-frame': 'rect', 'data-seed': sd('cd'),
             text: '距出发还有 ' + cd + ' 天' })
@@ -287,20 +324,94 @@
         ])
       ]),
       h('div', { class: 'btn', 'data-frame': 'rect', 'data-seed': sd('btn'),
-        'data-fill': '#a8c8b4', text: '继续完善计划 →' })
+        'data-fill': '#a8c8b4',
+        text: v.status === 'cancelled' ? '这趟取消了 · 想去了再改回来' : '继续完善计划 →' })
     ]);
   }
 
   /* ================= 四、挂载 ================= */
 
-  const RENDER = { done: renderDone, ongoing: renderDone, planned: renderPlan };
+  const RENDER = { done: renderDone, ongoing: renderDone,
+    planned: renderPlan, cancelled: renderPlan };
 
-  // 已旅行按开始时间倒序，待出行按出发时间正序（快的排前面）
-  function order(trips) {
+  // 已旅行（含旅行中）按开始时间倒序，待出行按出发时间正序（快的排前面）。
+  // 分栏看的是算出来的状态，不是存的那一笔 —— 日期一过就自己挪到上面去
+  function order(trips, now) {
     const key = t => +(K.parseTime(t.time && t.time.start) || 0);
-    const done = trips.filter(t => t.status !== 'planned').sort((a, b) => key(b) - key(a));
-    const plan = trips.filter(t => t.status === 'planned').sort((a, b) => key(a) - key(b));
-    return done.concat(plan);
+    const done = [], plan = [];
+    for (const t of trips) (isPlan(statusOf(t, now)) ? plan : done).push(t);
+    return done.sort((a, b) => key(b) - key(a)).concat(plan.sort((a, b) => key(a) - key(b)));
+  }
+
+  /* ================= 三点五、跨行程的汇总 =================
+     地图和足迹总览都只吃这两个函数，页面上不许再自己算一遍 —— 数字对不上就是这么来的。 */
+
+  /* 所有航段摊成一张图：只认 leg 里填的码，坐标查 places，查不到进 unknown 让页面标出来。
+     城市按名字去重（SHA / PVG 都是上海，算一座），代号取第一次出现的那个。 */
+  function atlas(trips, ctx) {
+    const routes = [], cities = new Map(), unknown = [];
+    for (const t of order(trips || [], ctx.now)) {
+      for (const l of derive(t, ctx).legs) {
+        if (l.unknown) {
+          for (const code of [l.from, l.to])
+            if (code && !lookup(ctx.places, code) && unknown.indexOf(code) < 0) unknown.push(code);
+          continue;
+        }
+        routes.push({
+          from: l.from, to: l.to, fromLL: l.fromLL, toLL: l.toLL,
+          fromName: l.fromName, toName: l.toName, flown: l.flown, mode: l.mode,
+          km: l.km, date: l.date, tripId: t.id, tripTitle: t.title || '未命名'
+        });
+        for (const end of [[l.from, l.fromName, l.fromLL], [l.to, l.toName, l.toLL]]) {
+          const c = cities.get(end[1])
+            || { code: end[0], name: end[1], ll: end[2], flown: false, trips: [] };
+          if (l.flown) c.flown = true;
+          if (c.trips.indexOf(t.id) < 0) c.trips.push(t.id);
+          cities.set(end[1], c);
+        }
+      }
+    }
+    const flown = routes.filter(r => r.flown);
+    return {
+      routes, unknown, cities: [...cities.values()],
+      flownCount: flown.length, planCount: routes.length - flown.length,
+      km: K.sumBy(routes, r => r.km), kmFlown: K.sumBy(flown, r => r.km)
+    };
+  }
+
+  /* 足迹总览页要的数字，一样是现算：改一笔花销，这里立刻跟着变 */
+  function summary(trips, ctx) {
+    const list = order(trips || [], ctx.now);
+    const views = list.map(t => derive(t, ctx));
+    const done = views.filter(v => !isPlan(v.status));      // 旅行中的也算在「走过」里
+    const plan = views.filter(v => isPlan(v.status));
+    const years = new Map();
+    for (const v of done) {
+      const d = K.parseTime(v.trip.time && v.trip.time.start);
+      const y = d ? d.getFullYear() : '未知';
+      const row = years.get(y) || { year: y, trips: 0, days: 0, km: 0, spend: 0 };
+      row.trips++; row.days += v.days; row.km += v.km; row.spend += v.spendTotal;
+      years.set(y, row);
+    }
+    const byCat = CAT_ORDER.map(c => ({
+      category: c,
+      amount: K.sumBy(done, v => K.sumBy(v.spends.filter(s => s.category === c), s => s.amount))
+    })).filter(x => x.amount > 0).sort((a, b) => b.amount - a.amount);
+    // 「下一趟」只看还没走的，取消了的不算
+    const waiting = plan.filter(v => v.status === 'planned');
+    const next = waiting.filter(v => v.countdown != null && v.countdown >= 0)[0] || waiting[0] || null;
+    return {
+      views, done, plan,
+      ongoing: views.filter(v => v.status === 'ongoing'),
+      atlas: atlas(trips, ctx),
+      days: K.sumBy(done, v => v.days),
+      photos: K.sumBy(done, v => v.media.length),
+      spend: K.sumBy(done, v => v.spendTotal),
+      budgetPlanned: K.sumBy(plan, v => v.budget),
+      byCat, byYear: [...years.values()].sort((a, b) => a.year - b.year),
+      next: next && { trip: next.trip, countdown: next.countdown, view: next },
+      base: ctx.baseCurrency || 'CNY'
+    };
   }
 
   function mount(host, data, opts) {
@@ -311,14 +422,15 @@
     };
     host.textContent = '';
     const views = [];
-    for (const t of order(data.trips || [])) {
+    for (const t of order(data.trips || [], ctx.now)) {
       const v = derive(t, ctx);
-      const render = RENDER[t.status] || renderDone;
+      const render = RENDER[v.status] || renderDone;
       host.appendChild(render(v));
       views.push(v);
     }
     return views;
   }
 
-  root.TripView = { derive, mount, order, greatCircle, lookup, fmtDate, fmtMoney, CAT_ORDER };
+  root.TripView = { derive, atlas, summary, mount, order, greatCircle, lookup,
+    fmtDate, fmtMoney, wallPhotos, statusOf, isPlan, STATUS_LABEL, CAT_ORDER };
 })(typeof window !== 'undefined' ? window : globalThis);

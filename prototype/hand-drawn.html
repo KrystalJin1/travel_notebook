@@ -68,6 +68,15 @@
 <script>
 /* 这一页是风格样张（§4.8）：手帐本本体在 index.html。
    这里只把卡片渲染出来看笔迹，调参条留着自己看。 */
+
+// 样张只画「最近一趟已旅行 + 下一趟待出行」两张，仓库里加到几十趟也不影响这页
+function sampleOf(data){
+  const ordered = TripView.order(data.trips || []);
+  const pick = [ordered.filter(t => t.status !== 'planned')[0],
+                ordered.filter(t => t.status === 'planned')[0]].filter(Boolean);
+  return Object.assign({}, data, { trips: pick });
+}
+
 function mountCards(){
   const host = document.getElementById('cards');
   if (!host) return;
@@ -75,7 +84,7 @@ function mountCards(){
     Sketch.say('data/bundle.js 或 trip.js 没加载 —— 卡片渲染不出来');
     return;
   }
-  const views = TripView.mount(host, DATA);
+  const views = TripView.mount(host, sampleOf(DATA));
   const bad = views.flatMap(v => v.legs.filter(l => l.unknown).map(l => l.from + '\u2192' + l.to));
   if (bad.length) Sketch.say('这些城市在 data/places.json 里查不到坐标：' + bad.join('、'));
 }

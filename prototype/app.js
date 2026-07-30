@@ -26,6 +26,8 @@
   }
 
   const money = n => '¥' + T.fmtMoney(n);
+  // 标题可以是空的（新建的一趟就是空的，占位提示在编辑器里），显示时再兜底
+  const named = t => t.title || '未命名';
 
   // 点了就走，键盘也能走 —— 时间轴上的每一趟都是一个按钮
   function tappable(el, fn) {
@@ -46,8 +48,12 @@
     if (p[0] === 'debug') { document.body.classList.add('debug'); return { name: 'shelf' }; }
     if (p[0] === 'shelf') return { name: 'shelf' };
     if (p[0] === 'map') return { name: 'map' };
+    if (p[0] === 'stats') return { name: 'stats' };
     if (p[0] === 'about') return { name: 'about' };
-    if (p[0] === 'trip' && p[1]) return { name: 'trip', id: p[1], edit: p[2] === 'edit' };
+    if (p[0] === 'trip' && p[1]) {
+      if (p[2] === 'photo' && p[3] != null) return { name: 'photo', id: p[1], n: +p[3] || 0 };
+      return { name: 'trip', id: p[1], edit: p[2] === 'edit' };
+    }
     return { name: 'cover' };
   }
 
@@ -83,17 +89,20 @@
   /* 书架上一行 = 一趟。这里故意不给每个数字套手绘框：一屏十几个抖动的小方框
      会把版面搅花，手绘留给外框那一个，数字排成一行小字（§4.8 规整优先）。 */
   function strip(t) {
-    const v = T.derive(t, ST.ctx()), plan = t.status === 'planned';
-    const facts = plan
-      ? [v.countdown > 0 ? '距出发 ' + v.countdown + ' 天' : '就要走了',
-         '预算 ' + money(v.budget), '想去 ' + v.wishlist.length + ' 个']
-      : [v.days + ' 天', v.cities.length + ' 城市',
-         v.media.length + ' 照片', money(v.spendTotal)];
+    const v = T.derive(t, ST.ctx()), plan = T.isPlan(v.status);
+    const facts = v.status === 'cancelled'
+      ? ['已取消', '预算 ' + money(v.budget)]
+      : v.status === 'planned'
+        ? [v.countdown > 0 ? '距出发 ' + v.countdown + ' 天' : '就要走了',
+           '预算 ' + money(v.budget), '想去 ' + v.wishlist.length + ' 个']
+        : [v.status === 'ongoing' ? '第 ' + v.dayNow + ' 天' : null,
+           v.days + ' 天', v.cities.length + ' 城市',
+           v.media.length + ' 照片', money(v.spendTotal)].filter(Boolean);
 
     const item = h('div', { class: 'tl-item' + (plan ? ' plan' : '') }, [
       h('div', { class: 'strip', 'data-frame': 'rect', 'data-seed': t.seed }, [
         h('div', { class: 'when', text: v.dateLabel }),
-        h('div', { class: 'name' + (plan ? ' plan' : ''), 'data-hand': true, text: t.title }),
+        h('div', { class: 'name' + (plan ? ' plan' : ''), 'data-hand': true, text: named(t) }),
         h('div', { class: 'facts', text: facts.join('　·　') }),
         h('span', { class: 'go', text: '→' })
       ])
@@ -101,11 +110,13 @@
     return tappable(item, () => go('#/trip/' + t.id));
   }
 
+  /* 分栏按算出来的状态（§3.2）：日期一过，那趟自己从「待出行」挪到「已旅行」，
+     用户不用去改下拉框。「旅行中」只在真有一趟正在走的时候才出现。 */
   function shelfView() {
     const trips = ST.ordered();
-    const done = trips.filter(t => t.status !== 'planned');
-    const plan = trips.filter(t => t.status === 'planned');
-    const group = (label, list, empty) => [
+    const statusOf = t => T.derive(t, ST.ctx()).status;
+    const pick = fn => trips.filter(t => fn(statusOf(t)));
+    const group = (label, list, empty) => (!list.length && !empty) ? [] : [
       h('div', { class: 'sec-label', text: label }),
       list.length ? h('div', { class: 'tl' }, list.map(strip))
                   : h('div', { class: 'empty', text: empty })
@@ -118,8 +129,9 @@
     });
 
     return h('div', { class: 'view shelf' }, [
-      ...group('已旅行 · PAST', done, '还没有记完的旅行。'),
-      ...group('待出行 · PLANNED', plan, '还没有计划。点下面新建一趟。'),
+      ...group('旅行中 · NOW', pick(s => s === 'ongoing'), null),
+      ...group('已旅行 · PAST', pick(s => s === 'done'), '还没有记完的旅行。'),
+      ...group('待出行 · PLANNED', pick(T.isPlan), '还没有计划。点下面新建一趟。'),
       add
     ]);
   }
@@ -161,12 +173,19 @@
 
     const cardHost = h('div'), moneyHost = h('div'), editHost = h('div');
     const paint = () => { SK.repaint(); if (root.handtype) root.handtype(); };
-    const bar = topbar(t.title, r.edit ? '完成 ✓' : '编辑 ✎',
+    const bar = topbar(named(t), r.edit ? '完成 ✓' : '编辑 ✎',
       () => go('#/trip/' + t.id + (r.edit ? '' : '/edit')));
 
     // 卡片和编辑器是两个独立容器：填一个数字只重画卡片，输入框不会失焦（§4.8）
     function drawCard() {
       T.mount(cardHost, Object.assign({}, ST.data, { trips: [t] }));
+      // 照片墙上的每一张都能点开看大图。序号由 trip.js 打在 data-ph 上，
+      // 路由留在这一层，卡片那边照旧不认识 hash（§6.1）
+      for (const el of cardHost.querySelectorAll('[data-ph]'))
+        tappable(el, () => {
+          flipFrom = el.getBoundingClientRect();
+          go('#/trip/' + t.id + '/photo/' + (el.getAttribute('data-ph') || 0));
+        });
       moneyHost.textContent = '';
       const mb = r.edit ? null : moneyBlock(T.derive(t, ST.ctx()));
       if (mb) moneyHost.appendChild(mb);
@@ -194,8 +213,10 @@
 
   function commit(el, fn) { el.addEventListener('change', fn); return el; }
 
-  function txt(label, val, fn, cls) {
-    const el = h('input', { type: 'text', value: val == null ? '' : val });
+  // ph = 占位提示。默认文案一律走 placeholder，不写成 value ——
+  // 写成 value 用户点开第一件事是全选删掉（用户反馈）。
+  function txt(label, val, fn, cls, ph) {
+    const el = h('input', { type: 'text', value: val == null ? '' : val, placeholder: ph || null });
     commit(el, () => fn(el.value));
     return field(label, el, cls);
   }
@@ -234,6 +255,20 @@
 
   /* ================= 七、编辑：填数字的地方 ================= */
 
+  /* 状态那一格写回仓库的规则：'auto' = 不锁，存一笔当下算出来的值（导出的 JSON 里不留旧状态）；
+     选了具体一档就打上 lockStatus，状态机不再动它。取消本身就是终点，不用再锁。 */
+  function setStatus(tr, x) {
+    tr.data = tr.data || {};
+    if (x === 'auto') {
+      delete tr.data.lockStatus;
+      tr.status = T.statusOf(tr, ST.ctx().now);
+    } else {
+      tr.status = x;
+      if (x === 'cancelled') delete tr.data.lockStatus;
+      else tr.data.lockStatus = true;
+    }
+  }
+
   function editor(t, redraw) {
     const v = T.derive(t, ST.ctx());
     const ofType = ty => (t.entries || []).filter(e => e.type === ty);
@@ -245,18 +280,29 @@
       'data-seed': K.seedOf(t.seed, label), text: label }), fn);
     const del = fn => tappable(h('span', { class: 'del', text: '删除' }), fn);
 
-    /* --- 这一趟 --- */
+    /* --- 这一趟 ---
+       状态默认「跟着日期走」（§3.2 状态机）：出发日到了自己变旅行中，结束日过了自己变已旅行。
+       选具体某一档就是锁住不再自动推进 —— 行程取消、日期没定的时候用得上。
+       日期一改状态可能就翻了，所以这三个控件改完重画整个编辑器（回声也得跟着变）。 */
+    const relock = tr => { if (!v.statusLocked) tr.status = T.statusOf(tr, ST.ctx().now); };
     const basic = [
       h('h3', { text: '这一趟' }),
       row([
-        txt('标题', t.title, x => { pt(tr => { tr.title = x || '未命名'; }); redraw.title(t.title); }, 'wide'),
-        sel('状态', t.status === 'planned' ? 'planned' : 'done',
-          [['done', '已旅行'], ['planned', '待出行']], x => pt(tr => { tr.status = x; })),
+        txt('标题', t.title, x => { pt(tr => { tr.title = x.trim(); }); redraw.title(named(t)); },
+          'wide', '这趟叫什么，比如「东京」'),
+        sel('状态', v.statusLocked ? v.status : 'auto',
+          [['auto', '跟着日期走'], ['planned', '锁定 · 待出行'], ['ongoing', '锁定 · 旅行中'],
+           ['done', '锁定 · 已旅行'], ['cancelled', '取消了']],
+          x => { ST.patchTrip(t.id, tr => setStatus(tr, x)); redraw.all(); }),
         txt('编号', (t.data || {}).no, x => pt(tr => { tr.data.no = x; })),
-        dateIn('开始', t.time.start, x => pt(tr => { tr.time.start = x; })),
-        dateIn('结束', t.time.end, x => pt(tr => { tr.time.end = x; })),
+        dateIn('开始', t.time.start,
+          x => { ST.patchTrip(t.id, tr => { tr.time.start = x; relock(tr); }); redraw.all(); }),
+        dateIn('结束', t.time.end,
+          x => { ST.patchTrip(t.id, tr => { tr.time.end = x; relock(tr); }); redraw.all(); }),
         num('预算', v.budget, x => pt(tr => { tr.data.budget = x; }))
-      ])
+      ]),
+      h('div', { class: 'echo', text: '现在算「' + v.statusLabel + '」'
+        + (v.statusLocked ? '：锁住了，日期到了也不动。' : '：按日期自动推进。') })
     ];
 
     /* --- 航段：航线只认这里填的三字码，不从别处猜（§3.2） --- */
@@ -267,7 +313,7 @@
       ...v.legs.map(l => row([
         txt('从', l.from, x => pe(l.entry, e => { e.data.from = x.toUpperCase(); })),
         txt('到', l.to, x => pe(l.entry, e => { e.data.to = x.toUpperCase(); })),
-        txt('航班号', l.code, x => pe(l.entry, e => { e.data.code = x; })),
+        txt('航班号', l.code, x => pe(l.entry, e => { e.data.code = x; }), null, '选填'),
         dateIn('日期', l.entry.time && l.entry.time.start,
           x => pe(l.entry, e => { e.time.start = x; })),
         chk('已飞', l.flown, x => pe(l.entry, e => { e.data.flown = x; })),
@@ -284,7 +330,7 @@
     const spends = [
       h('h3', { text: '花销' }),
       ...v.spends.map(s => row([
-        txt('名目', s.title, x => pe(s.entry, e => { e.title = x; })),
+        txt('名目', s.title, x => pe(s.entry, e => { e.title = x; }), null, '花在什么上'),
         sel('类目', s.category, T.CAT_ORDER, x => pe(s.entry, e => { e.data.category = x; })),
         num('金额', s.raw, x => pe(s.entry, e => { e.data.amount = x; })),
         sel('币种', s.currency, ST.currencies(),
@@ -305,9 +351,9 @@
           x => pe(e, ee => { ee.data.day = x || null; })),
         txt('名字', e.place && e.place.name || e.title, x => pe(e, ee => {
           ee.place = ee.place || {}; ee.place.name = x; ee.title = x;
-        })),
+        }), null, '想去哪儿'),
         txt('城市', e.place && e.place.city,
-          x => pe(e, ee => { ee.place = ee.place || {}; ee.place.city = x; })),
+          x => pe(e, ee => { ee.place = ee.place || {}; ee.place.city = x; }), null, '在哪座城市'),
         del(() => cut(e))
       ])),
       mini('＋ 加一个', () => grow('place'))
@@ -315,7 +361,8 @@
 
     /* --- 随手写 --- */
     const n0 = ofType('note')[0];
-    const ta = h('textarea', { text: n0 ? (n0.body || '') : '' });
+    const ta = h('textarea', { text: n0 ? (n0.body || '') : '',
+      placeholder: '当时发生了什么、天气怎么样、下次还来不来。' });
     commit(ta, () => {
       if (n0) pe(n0, e => { e.body = ta.value; });
       else grow('note', { body: ta.value });
@@ -324,6 +371,15 @@
       h('h3', { text: '随手写' }),
       h('div', { class: 'tip', text: '**两个星号**中间的字会变成重点。' }),
       row([field('正文', ta, 'wide')])
+    ];
+
+    /* --- 确定：改动是即时存的，但用户需要一个「填完了」的出口。
+           顶栏那个「完成 ✓」太小，新建完一趟找不到（用户反馈），所以这里再给一个大的。 --- */
+    const done = [
+      tappable(h('div', { class: 'btn done-edit', 'data-frame': 'rect',
+        'data-seed': K.seedOf(t.seed, 'done'), 'data-fill': '#a8c8b4',
+        text: '完成 ✓ 看这一趟' }), () => go('#/trip/' + t.id)),
+      h('div', { class: 'tip', text: '填的东西是随填随存的，这个按钮只是收起编辑器。' })
     ];
 
     /* --- 数据出口：没有后端，导出 JSON 就是「把改动带回仓库」的唯一办法 --- */
@@ -346,58 +402,299 @@
           if (confirm('丢掉本机所有改动，回到仓库里的示例数据？')) { ST.reset(); redraw.all(); }
         }),
         mini('删掉这趟', () => {
-          if (confirm('删掉「' + t.title + '」？')) { ST.removeTrip(t.id); go('#/shelf'); }
+          if (confirm('删掉「' + named(t) + '」？')) { ST.removeTrip(t.id); go('#/shelf'); }
         })
       ])
     ];
 
     return h('div', { class: 'editor' },
-      [].concat(basic, legs, spends, spots, notes, footer));
+      [].concat(basic, legs, spends, spots, notes, done, footer));
   }
 
-  /* ================= 八、地图 / 关于 ================= */
+  /* ================= 八、地图 ================= */
 
+  /* 地图上每一段都对应用户真填的一条 leg（TripView.atlas 算好），
+     点航线或城市就跳去那一趟。坐标查不到的段不画，名单在下面列出来，不猜。 */
   function mapView() {
-    const rows = [];
-    let km = 0;
-    for (const t of ST.ordered()) {
-      const v = T.derive(t, ST.ctx());
-      for (const l of v.legs) {
-        km += l.km;
-        rows.push(h('div', { class: 'money-cat' }, [
-          h('span', { text: l.from + ' → ' + l.to + '　' + l.fromName + ' – ' + l.toName }),
-          h('b', { text: l.km ? T.fmtMoney(l.km) + ' km' : (l.unknown ? '查不到坐标' : '—') })
-        ]));
-      }
+    const at = T.atlas(ST.data.trips || [], ST.ctx());
+    const bar = topbar('地图');
+    const box = h('div', { class: 'map-stage' });
+    const capt = h('div', { class: 'echo', text: '正在画…' });
+    const lgDone = h('i'), lgPlan = h('i');
+
+    const facts = () => ['已飞 ' + at.flownCount + ' 段', '计划 ' + at.planCount + ' 段',
+      at.cities.length + ' 座城市', T.fmtMoney(at.km) + ' 公里（已飞 '
+      + T.fmtMoney(at.kmFlown) + '）', ST.data.trips.length + ' 趟'].join('　·　');
+
+    const legend = h('div', { class: 'legend' }, [
+      h('span', null, [lgDone, h('span', { text: '已旅行' })]),
+      h('span', null, [lgPlan, h('span', { text: '待出行' })]),
+      h('span', { class: 'facts', text: facts() })
+    ]);
+
+    const miss = root.MapView ? root.MapView.missing() : 'map.js';
+    if (miss) {
+      box.appendChild(h('div', { class: 'empty', text: '地图画不出来：' + miss + ' 没加载。' }));
+      capt.textContent = '';
+    } else if (!at.routes.length) {
+      box.appendChild(h('div', { class: 'empty',
+        text: '还没有航段。去某一趟的编辑页「＋ 加一段」，这里就有线了。' }));
+      capt.textContent = '';
+    } else {
+      const ctrl = root.MapView.mount(box, at, {
+        onStatus: s => { capt.textContent = s; },
+        onPick: x => go('#/trip/' + (x.tripId || x.trips[0]))
+      });
+      const seg = h('div', { class: 'seg' });
+      [['flat', '摊平'], ['globe', '地球']].forEach(([v, label]) => {
+        const b = tappable(h('div', { class: 'mini' + (v === 'flat' ? ' on' : ''),
+          'data-frame': 'rect', 'data-seed': K.seedOf(9, v), text: label }), () => {
+          ctrl.setView(v);
+          for (const n of Array.prototype.slice.call(seg.children))
+            n.classList.toggle('on', n === b);
+          SK.repaint();
+        });
+        seg.appendChild(b);
+      });
+      bar.appendChild(seg);
+      // 挂上去之后再画：svg 要先进 DOM 才量得到尺寸
+      setTimeout(() => {
+        ctrl.repaint();
+        root.MapView.legendLine(lgDone, 'done');
+        root.MapView.legendLine(lgPlan, 'plan');
+      }, 0);
     }
+
+    const rows = at.routes.map(r => tappable(h('div', { class: 'money-cat' }, [
+      h('span', { text: r.from + ' → ' + r.to + '　' + r.fromName + ' – ' + r.toName
+        + (r.flown ? '' : '（计划）') }),
+      h('b', { text: r.km ? T.fmtMoney(r.km) + ' km' : '—' })
+    ]), () => go('#/trip/' + r.tripId)));
+
     return h('div', { class: 'view' }, [
-      topbar('地图'),
+      bar,
+      h('div', { class: 'editor' }, [box, capt, legend]),
       h('div', { class: 'editor' }, [
         h('h3', { text: '航线一览' }),
-        h('div', { class: 'tip', text: '手绘世界地图还单独放在 map.html 里，M3 会并进这一页。'
-          + '坐标全部来自 data/places.json，查不到就在这儿标出来，不猜。' }),
+        h('div', { class: 'tip', text: '点地图上的线或城市，也点这里的任意一行，都能跳到那一趟。'
+          + '坐标全部来自 data/places.json。' }),
         ...rows,
         rows.length ? null : h('div', { class: 'empty', text: '还没有航段。' }),
-        h('div', { class: 'echo', text: '合计 ' + T.fmtMoney(km) + ' 公里' }),
-        h('a', { class: 'mini', href: 'map.html', 'data-frame': 'rect', 'data-seed': 91,
-          style: 'text-decoration:none;color:inherit', text: '先看那张手绘地图 →' })
+        at.unknown.length
+          ? h('div', { class: 'echo danger', text: '这些码在 data/places.json 里查不到，'
+              + '所以画不出来：' + at.unknown.join('、') })
+          : null,
+        h('div', { class: 'echo', text: facts() })
       ])
     ]);
   }
 
-  function aboutView() {
-    const p = s => h('p', { style: 'font-size:14.5px;line-height:1.9;margin:8px 0', text: s });
+  /* ================= 八点五、照片大图 ================= */
+
+  /* 点缩略图时记下它当时的位置，大图就从那儿长出来（FLIP：先把大图缩回小图的
+     位置和尺寸，下一帧再放开，浏览器补中间的过程）。翻页时不用它。 */
+  let flipFrom = null;
+
+  const wallOf = t => T.wallPhotos(T.derive(t, ST.ctx()));
+
+  function photoStep(r, d) {
+    const t = ST.trip(r.id);
+    if (!t) return;
+    const n = wallOf(t).length;
+    if (n < 2) return;
+    flipFrom = null;
+    go('#/trip/' + t.id + '/photo/' + (((r.n + d) % n + n) % n));
+  }
+
+  function photoView(r) {
+    const t = ST.trip(r.id);
+    const list = t ? wallOf(t) : [];
+    if (!list.length) return h('div', { class: 'view' }, [
+      topbar('看照片'),
+      h('div', { class: 'empty', text: '这一趟还没有照片。' })
+    ]);
+
+    const n = ((r.n % list.length) + list.length) % list.length;
+    const e = list[n], m = e.media[0];
+    const inner = /^art:/.test(m.path)
+      ? h('div', { class: 'art', 'data-art': m.path.slice(4), 'aria-hidden': 'true' })
+      : h('img', { class: 'art', src: m.path, alt: e.title || '' });
+
+    const cap = [e.place && e.place.name || e.title, e.data && e.data.day ? 'D' + e.data.day : null]
+      .filter(Boolean).join(' · ');
+    const fig = h('div', { class: 'lb-fig', 'data-frame': 'rect',
+      'data-seed': K.seedOf(t.seed, 'lb' + e.id) }, [inner]);
+
+    const arrow = (label, d) => tappable(h('div',
+      { class: 'lb-arrow' + (list.length < 2 ? ' off' : ''), text: label }),
+      () => photoStep({ id: t.id, n: n }, d));
+
+    return h('div', { class: 'view photo' }, [
+      h('div', { class: 'lb-bar' }, [
+        tappable(h('span', { class: 'lb-x', text: '✕' }), () => go('#/trip/' + t.id)),
+        h('span', { class: 'lb-t', text: named(t) }),
+        h('span', { class: 'lb-n', text: (n + 1) + ' / ' + list.length })
+      ]),
+      h('div', { class: 'lb-stage' }, [arrow('‹', -1), fig, arrow('›', 1)]),
+      h('div', { class: 'lb-cap' }, [
+        h('div', { class: 'lb-cap-t', text: cap || '还没写说明' }),
+        h('div', { class: 'lb-cap-s',
+          text: e.body || (list.length > 1 ? '左右滑动或按 ← → 翻页　·　Esc 关掉' : 'Esc 关掉') })
+      ])
+    ]);
+  }
+
+  /* 从缩略图长成大图。要等这一页真进了 DOM 才量得到位置，所以 render() 末尾才调 */
+  function playFlip(view) {
+    const from = flipFrom;
+    flipFrom = null;
+    const fig = view.querySelector && view.querySelector('.lb-fig');
+    if (!from || !fig || !root.requestAnimationFrame) return;
+    const to = fig.getBoundingClientRect();
+    if (!to.width || !to.height) return;
+    fig.style.transformOrigin = 'top left';
+    fig.style.transform = 'translate(' + (from.left - to.left).toFixed(1) + 'px,'
+      + (from.top - to.top).toFixed(1) + 'px) scale('
+      + (from.width / to.width).toFixed(4) + ',' + (from.height / to.height).toFixed(4) + ')';
+    fig.style.opacity = '.55';
+    requestAnimationFrame(() => {
+      fig.style.transition = 'transform .34s cubic-bezier(.2,.72,.24,1),opacity .22s ease-out';
+      fig.style.transform = 'none';
+      fig.style.opacity = '1';
+    });
+  }
+
+  /* ================= 八点六、足迹总览 ================= */
+
+  function statsView() {
+    const s = T.summary(ST.data.trips || [], ST.ctx());
+    const big = (n, label) => h('div', { class: 'big' }, [
+      h('div', { class: 'big-n', text: n }), h('div', { class: 'big-l', text: label })
+    ]);
+    // 一行 = 一个条：宽度按占比现算，条本身是手绘的
+    const barRow = (label, val, max, note, seed) => h('div', { class: 'bar-row' }, [
+      h('span', { class: 'bar-k', text: label }),
+      h('div', { class: 'bar', 'data-frame': 'bar',
+        'data-pct': max ? Math.max(3, Math.round(val / max * 100)) : 0, 'data-seed': seed }),
+      h('span', { class: 'bar-v', text: note })
+    ]);
+
+    const yMax = Math.max.apply(null, s.byYear.map(y => y.spend).concat([1]));
+    const cMax = s.byCat.length ? s.byCat[0].amount : 1;
+
     return h('div', { class: 'view' }, [
-      topbar('关于这本手帐'),
+      topbar('足迹总览'),
       h('div', { class: 'editor' }, [
-        h('h3', { text: '怎么做的' }),
-        p('没有框架、没有打包器，一个 index.html 加几个 js。'
-          + '手绘线是 rough.js 现画的 SVG：同一个 seed 画出来的笔迹永远一样，'
-          + '所以导出、快照、回归测试都对得上。'),
-        p('分三层：kernel.js 只管时间、汇率、汇总，不认识「旅行」两个字；'
-          + 'trip.js 认识 leg / spend / place，负责算出卡片上的数字；'
-          + 'sketch.js 只管把 data-frame 变成手绘框。换成小程序 canvas 时前两层不用动。'),
-        p('数据存在浏览器里，导出 JSON 覆盖回仓库就成了新的示例数据。'),
+        h('h3', { text: '一共走了多少' }),
+        h('div', { class: 'bigs' }, [
+          big(s.done.length, '趟已旅行'),
+          big(s.plan.length, '趟待出行'),
+          big(s.days, '天在路上'),
+          big(s.atlas.cities.length, '座城市'),
+          big(T.fmtMoney(s.atlas.kmFlown), '公里已飞'),
+          big(s.photos, '张照片')
+        ]),
+        h('div', { class: 'echo', text: (s.ongoing.length ? '正在路上 ' + s.ongoing.length + ' 趟　·　' : '')
+          + '已花 ' + money(s.spend) + '　·　待出行预算 '
+          + money(s.budgetPlanned) + '　·　计划中还有 ' + T.fmtMoney(s.atlas.km - s.atlas.kmFlown)
+          + ' 公里要飞' })
+      ]),
+      s.next ? h('div', { class: 'editor' }, [
+        h('h3', { text: '下一趟' }),
+        tappable(h('div', { class: 'money-cat' }, [
+          h('span', { text: (s.next.trip.title || '未命名') + '　' + s.next.view.dateLabel }),
+          h('b', { text: s.next.countdown > 0 ? '还有 ' + s.next.countdown + ' 天' : '就要走了' })
+        ]), () => go('#/trip/' + s.next.trip.id))
+      ]) : null,
+      s.byYear.length ? h('div', { class: 'editor' }, [
+        h('h3', { text: '按年份' }),
+        ...s.byYear.map(y => barRow(String(y.year), y.spend, yMax,
+          y.trips + ' 趟 · ' + y.days + ' 天 · ' + money(y.spend), K.seedOf(31, String(y.year))))
+      ]) : null,
+      s.byCat.length ? h('div', { class: 'editor' }, [
+        h('h3', { text: '钱花在哪儿了（全部旅行合计）' }),
+        ...s.byCat.map(c => barRow(c.category, c.amount, cMax,
+          money(c.amount) + ' · ' + Math.round(c.amount / s.spend * 100) + '%',
+          K.seedOf(37, c.category)))
+      ]) : null
+    ]);
+  }
+
+  /* ================= 八点六、案例页（§4.8 about）=================
+     这一页讲技术不讲行程（M6）。上面那些数字一律现算 —— 一页专门用来说
+     「数字只有一处出处」的页面，自己再抄一份就说不过去了。 */
+
+  function aboutView() {
+    const trips = ST.data.trips || [];
+    const s = T.summary(trips, ST.ctx());
+    const entries = trips.reduce((n, t) => n + (t.entries || []).length, 0);
+    const glyphs = Object.keys(root.HANDTYPE_GLYPH || {}).length;
+    const places = Object.keys(ST.data.places || {}).length;
+
+    const p = txt => h('p', { class: 'about-p', text: txt });
+    const big = (n, label) => h('div', { class: 'big' }, [
+      h('div', { class: 'big-n', text: n }), h('div', { class: 'big-l', text: label })
+    ]);
+    // 一条 = 一件事：左边说做了什么，右边是这件事此刻的实际数字
+    const line = (k, v) => h('div', { class: 'money-cat' }, [
+      h('span', { text: k }), h('b', { text: v })
+    ]);
+    const point = (no, title, txt) => h('div', { class: 'about-pt' }, [
+      h('div', { class: 'about-no', text: no }),
+      h('div', {}, [h('div', { class: 'about-t', text: title }), p(txt)])
+    ]);
+
+    return h('div', { class: 'view about' }, [
+      topbar('这本手帐怎么做的'),
+      h('div', { class: 'editor' }, [
+        h('h3', { text: '一句话' }),
+        p('一个手帐式的旅行记录本：原生 HTML/CSS/JS，没有框架、没有打包器、没有后端，'
+          + '双击 index.html 就能用。纸、墨、胶带负责「像手帐」，栈式路由和可滚动的长页面'
+          + '负责「像 app」。'),
+        h('div', { class: 'bigs' }, [
+          big(trips.length, '趟旅行'),
+          big(entries, '条记录'),
+          big(s.atlas.routes.length, '段航线'),
+          big(s.atlas.cities.length, '座城市'),
+          big(glyphs, '个字形轮廓'),
+          big(places, '条坐标表')
+        ]),
+        h('div', { class: 'echo', text: '这六个数字都是打开这一页时现算的。' })
+      ]),
+      h('div', { class: 'editor' }, [
+        h('h3', { text: '三处有技术含量的地方' }),
+        point('1', '手绘渲染管线',
+          '构建时用 fontTools 抽出字形轮廓（handtype.js），运行时交给 rough.js 描边 —— '
+          + '标题的笔画本身在抖，不是把整个字当一块砖随机旋转。'
+          + '同一支笔画地图海岸线、插图、卡片框和标题，换一支笔（reseed）整页笔迹一起换。'
+          + '字库里没有轮廓的字自动退回普通文字渲染，加新文案不会缺字。'),
+        point('2', '确定性渲染',
+          '手绘要「看着随机」但必须「每次一样」，否则没法导出也没法测。'
+          + 'seed 存在数据里，seedOf(base, key) 派生每个元素的子种子，随机数是 mulberry32 —— '
+          + '同数据同 seed 得到逐字节相同的 SVG。测试里就是渲染两遍比对序列化结果。'),
+        point('3', '分层：内核不认识「旅行」',
+          'kernel.js 只管时间、汇率、汇总、seed；trip.js 是旅行皮肤，认识 leg / place / '
+          + 'spend / stay / note / photo，只决定「算什么、放哪个盒子」，不吐一行 SVG；'
+          + 'sketch.js 把 data-frame / data-art 变成手绘线。'
+          + '所以换成小程序 canvas 2d 时，前两层白拿。')
+      ]),
+      h('div', { class: 'editor' }, [
+        h('h3', { text: '数字只有一处出处' }),
+        h('div', { class: 'tip', text: '页面自己不许算 —— 三处数字对不上，一眼就知道是哪层错了。' }),
+        line('卡片 / 书架 ← derive()', s.done.length + ' 趟已旅行 · ' + s.plan.length + ' 趟待出行'),
+        line('地图 #/map ← atlas()', s.atlas.flownCount + ' 段已飞 · ' + s.atlas.planCount + ' 段计划'),
+        line('足迹 #/stats ← summary()', T.fmtMoney(s.atlas.kmFlown) + ' 公里 · ' + money(s.spend)),
+        line('状态 ← statusOf(trip, now)',
+          s.ongoing.length ? '正在路上 ' + s.ongoing.length + ' 趟' : '按日期自动推进'),
+        h('div', { class: 'echo', text: '改一笔花销、加一段航线，这四行立刻跟着变。' })
+      ]),
+      h('div', { class: 'editor' }, [
+        h('h3', { text: '约束逼出来的选择' }),
+        p('要能双击打开、要能发一个文件给别人，所以：pushState 在 file:// 下直接抛异常 → '
+          + 'hash 路由；字体 base64 内联；数据靠一个普通 script 标签挂成 window.DATA，不走 fetch。'
+          + '用 SVG 不用 canvas，是因为要能导出、能选中文字、能用 CSS 换色。'),
+        p('测试不开浏览器：手写一个 stub DOM，用 vm 依次执行页面里的每个 script，'
+          + '然后真的去点、真的去填 —— 填一个预算就断言仓库和卡片上的数字都跟着变。'),
         h('div', { class: 'echo',
           text: ST.dirty() ? '本机有未导出的改动。' : '当前显示的是仓库里的示例数据。' }),
         tappable(h('div', { class: 'mini', 'data-frame': 'rect', 'data-seed': 77,
@@ -416,7 +713,9 @@
   function viewOf(r) {
     if (r.name === 'cover') return coverView();
     if (r.name === 'map') return mapView();
+    if (r.name === 'stats') return statsView();
     if (r.name === 'about') return aboutView();
+    if (r.name === 'photo') return photoView(r);
     if (r.name === 'trip') return tripView(r);
     // 宽屏时书架常驻左侧，主列就不必再来一份
     return wide()
@@ -436,6 +735,7 @@
     atHash = location.hash;
 
     document.body.classList.toggle('at-cover', r.name === 'cover');
+    document.body.classList.toggle('at-photo', r.name === 'photo');
     const main = $('main');
     main.textContent = '';
     main.appendChild(el);
@@ -446,12 +746,14 @@
       if (r.name !== 'cover' && wide()) rail.appendChild(shelfView());
     }
 
-    const on = r.name === 'trip' ? '#/shelf' : '#/' + r.name;
+    // 照片大图算「某一趟」的一层，tab 还是停在书架上
+    const on = (r.name === 'trip' || r.name === 'photo') ? '#/shelf' : '#/' + r.name;
     for (const a of Array.prototype.slice.call($('tabs').getElementsByTagName('a')))
       a.classList.toggle('on', a.getAttribute('href') === on);
 
     SK.repaint();
     if (root.handtype) root.handtype();
+    if (r.name === 'photo') playFlip(el);
     // 等一帧再滚，不然刚换的内容还没排版，滚到底部会被夹回去
     const y = scrolls[atHash] || 0;
     const scroll = () => { if (root.scrollTo) root.scrollTo(0, y); };
@@ -468,12 +770,18 @@
   function bindKeys() {
     document.addEventListener('keydown', e => {
       if (typing(e)) return;
-      if (e.key === 'd') document.body.classList.toggle('debug');
-      else if (e.key === 'Escape' || e.key === 'ArrowLeft') back();
+      if (e.key === 'd') { document.body.classList.toggle('debug'); return; }
+      // 看大图时左右键是翻页，不是返回
+      const r = parse();
+      if (r.name === 'photo' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        photoStep(r, e.key === 'ArrowRight' ? 1 : -1);
+        return;
+      }
+      if (e.key === 'Escape' || e.key === 'ArrowLeft') back();
     });
   }
 
-  // 右滑返回：只认横向为主的一划，纵向滚动不误触
+  // 右滑返回：只认横向为主的一划，纵向滚动不误触。看大图时左右都是翻页
   function bindSwipe() {
     let x0 = 0, y0 = 0, t0 = 0;
     document.addEventListener('touchstart', e => {
@@ -483,7 +791,10 @@
     document.addEventListener('touchend', e => {
       const p = e.changedTouches[0];
       const dx = p.clientX - x0, dy = p.clientY - y0;
-      if (dx > 60 && Math.abs(dy) < 40 && Date.now() - t0 < 600) back();
+      if (Math.abs(dx) < 60 || Math.abs(dy) > 40 || Date.now() - t0 >= 600) return;
+      const r = parse();
+      if (r.name === 'photo') photoStep(r, dx < 0 ? 1 : -1);
+      else if (dx > 0) back();
     }, { passive: true });
   }
 

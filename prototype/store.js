@@ -49,7 +49,8 @@
   /* ---------- 查 ---------- */
 
   const trip = id => (data.trips || []).filter(t => t.id === id)[0] || null;
-  const ordered = () => root.TripView.order(data.trips || []);
+  // 排序要看算出来的状态（§3.2 状态机），所以 now 得跟 ctx() 用同一个
+  const ordered = () => root.TripView.order(data.trips || [], ctx().now);
   const currencies = () => Object.keys(data.rates || { CNY: 1 });
 
   const ctx = () => ({
@@ -76,16 +77,19 @@
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
   }
 
-  // 每种 type 的默认值。都填成能直接看见效果的样子，不留 null 让用户猜
+  // 每种 type 的默认值。
+  // 规矩：需要用户自己写的文字一律留空（占位提示写在 app.js 的 placeholder 里），
+  // 否则用户点开输入框第一件事是删掉「新的一笔」这种假文字。只有真正算得出来的
+  // 默认值（航段的起降码、住宿的日期、示意插图）才填。
   function blank(type) {
     const cur = data.baseCurrency || 'CNY';
     return ({
-      leg:   { title: '航段', data: { from: 'SHA', to: 'HND', mode: 'air', code: '', flown: false } },
-      spend: { title: '新的一笔', data: { amount: 0, currency: cur, category: '其他' } },
-      place: { title: '想去的地方', place: { name: '想去的地方', city: '' }, data: {} },
-      stay:  { title: '住的地方', data: { checkIn: today(), checkOut: today(1), booked: false } },
-      note:  { title: '随手写', body: '在这里写点什么。**两个星号**是重点。', data: {} },
-      photo: { title: '一张图', media: [{ id: 'm', path: 'art:fuji', kind: 'drawing', w: 150, h: 105 }], data: {} }
+      leg:   { title: '', data: { from: 'SHA', to: 'HND', mode: 'air', code: '', flown: false } },
+      spend: { title: '', data: { amount: 0, currency: cur, category: '其他' } },
+      place: { title: '', place: { name: '', city: '' }, data: {} },
+      stay:  { title: '', data: { checkIn: today(), checkOut: today(1), booked: false } },
+      note:  { title: '', body: '', data: {} },
+      photo: { title: '', media: [{ id: 'm', path: 'art:fuji', kind: 'drawing', w: 150, h: 105 }], data: {} }
     })[type];
   }
 
@@ -115,7 +119,7 @@
 
   function newTrip() {
     const t = {
-      id: uid('trip'), title: '新的一趟', status: 'planned',
+      id: uid('trip'), title: '', status: 'planned',   // 标题留空：占位提示在编辑器里，别让用户先删字
       seed: 100 + Math.floor(Math.random() * 800),   // 换 seed 就是换一次笔迹
       time: { start: today(30), end: today(34) },
       data: { no: '计划中', budget: 8000, currency: data.baseCurrency || 'CNY', cover: null },
