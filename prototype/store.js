@@ -1,8 +1,10 @@
 /* 数据仓库：示例数据（data/bundle.js，构建产物）+ 本机改动（localStorage）。
    没有后端，所以「填进去的数字」存在这台机器上；导出 JSON 可以把改动带回仓库。
 
-   规矩：places 不可编辑 —— 机场/城市坐标是查表，改要改 data/places.json 再重新构建，
-   否则航线画不出来（§3.2「查不到就提示用户手选，不静默猜」）。 */
+   坐标分两层（§3.2「查不到就提示用户手选，不静默猜」）：
+     · data.places   —— 查表，来自 data/places.json，只读，改它要重新构建
+     · data.myPlaces —— 用户自己补的，存在本机，查表里没有的码靠它救
+   ctx().places 是两层合并后的结果，用户那层优先。查不到还是查不到，一律不猜。 */
 (function (root) {
   'use strict';
 
@@ -19,17 +21,21 @@
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { /* 隐私模式下会抛 */ }
     data = clone(base);
+    data.myPlaces = {};
     if (saved) {
       const s = JSON.parse(saved);
       if (s.trips) data.trips = s.trips;
       if (s.rates) data.rates = s.rates;
+      if (s.myPlaces) data.myPlaces = s.myPlaces;
     }
     return data;
   }
-
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify({ trips: data.trips, rates: data.rates })); }
-    catch (e) { console.warn('存不下来（localStorage 不可用）：', e.message); }
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        trips: data.trips, rates: data.rates, myPlaces: data.myPlaces
+      }));
+    } catch (e) { console.warn('存不下来（localStorage 不可用）：', e.message); }
   }
 
   const dirty = () => {
@@ -39,8 +45,27 @@
   function reset() {
     try { localStorage.removeItem(KEY); } catch (e) { /* 同上 */ }
     data = clone(base);
+    data.myPlaces = {};
     emit();
   }
+
+  /* ---------- 示例数据 ---------- */
+
+  /* 默认只装 2 趟已旅行 + 2 趟待出行（data/trips.json）。剩下几趟搁在 data/samples.json，
+     跟着 bundle 一起发但不进仓库 —— 所以单文件离线也点得动，不用再发一次请求。
+     「清空」和 reset() 是两件事：reset 是「把我的改动撤回到出厂那 4 趟」，
+     clear 是「一趟都不要，从空本子开始记」。 */
+  const samples = () => clone((base && base.samples) || []);
+  const has = id => (data.trips || []).some(t => t.id === id);
+  const pending = () => samples().filter(t => !has(t.id));
+
+  const addSamples = () => change(() => {
+    const add = pending();
+    data.trips = (data.trips || []).concat(add);
+    return add.length;
+  });
+
+  const clearTrips = () => change(() => { data.trips = []; });
 
   const on = fn => listeners.push(fn);
   const emit = () => listeners.slice().forEach(fn => fn(data));
@@ -53,8 +78,27 @@
   const ordered = () => root.TripView.order(data.trips || [], ctx().now);
   const currencies = () => Object.keys(data.rates || { CNY: 1 });
 
+  // 两层合并，用户补的那层压在查表上面
+  const places = () => Object.assign({}, data.places || {}, data.myPlaces || {});
+  const isMine = key => !!(data.myPlaces || {})[key];
+
+  // ll = [经度, 纬度]。越界的值直接不收 —— 投影会把它算到画布外面去
+  function setPlace(key, rec) {
+    const k = String(key || '').trim();
+    const ll = rec && rec.ll;
+    if (!k || !ll || Math.abs(ll[0]) > 180 || Math.abs(ll[1]) > 90) return false;
+    change(() => {
+      data.myPlaces[k] = {
+        name: rec.name || k, sub: rec.sub || '',
+        ll: [Math.round(ll[0] * 100) / 100, Math.round(ll[1] * 100) / 100]
+      };
+    });
+    return true;
+  }
+  const dropPlace = key => change(() => { delete data.myPlaces[key]; });
+
   const ctx = () => ({
-    places: data.places || {},
+    places: places(),
     rates: data.rates || { CNY: 1 },
     baseCurrency: data.baseCurrency || 'CNY',
     now: new Date()
@@ -130,18 +174,25 @@
     return t.id;
   }
 
-  // 导出成 data/trips.json 那个形状，可以直接覆盖回仓库
-  const exportJSON = () => JSON.stringify({
-    version: data.version || 1,
-    baseCurrency: data.baseCurrency || 'CNY',
-    rates: data.rates,
-    trips: data.trips
-  }, null, 2);
+  // 导出成 data/trips.json 那个形状，可以直接覆盖回仓库。
+  // 自己补的坐标单独一段：为空时不写，导出的形状就跟仓库里那份一致
+  const exportJSON = () => {
+    const out = {
+      version: data.version || 1,
+      baseCurrency: data.baseCurrency || 'CNY',
+      rates: data.rates,
+      trips: data.trips
+    };
+    if (Object.keys(data.myPlaces || {}).length) out.myPlaces = data.myPlaces;
+    return JSON.stringify(out, null, 2);
+  };
 
   root.Store = {
     load, save, reset, dirty, on, change, today, blank,
     get data() { return data; },
     trip, entry, view, ordered, ctx, currencies,
+    places, isMine, setPlace, dropPlace,
+    samples, pending, addSamples, clearTrips,
     newTrip, addEntry, patchEntry, patchTrip, removeEntry, removeTrip, exportJSON
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -16,15 +16,38 @@ body{padding:0;min-height:100dvh}
 }
 @media (prefers-reduced-motion:reduce){.view,.view.flip{animation:none}}
 
-/* ---------- 封面 ---------- */
+/* ---------- 封面 ----------
+   一张贴满东西的书皮：手绘框只有最外面 .book 这一个（§4.8 规整优先），
+   里面的层次靠胶带 / 相纸 / 贴纸 / 一条细线拉开，不往里套第二层抖动的方框。 */
 .cover{min-height:calc(100dvh - 92px);display:flex;flex-direction:column;
-  justify-content:center;align-items:center;text-align:center;gap:6px}
-.cover .book{background:var(--paper);padding:44px 30px 34px;width:100%;max-width:420px}
-.cover h1{font-size:44px;line-height:1.15;margin-bottom:8px}
-.cover .by{font-size:14px;color:var(--ink2);letter-spacing:.06em}
-.cover .stamp{width:96px;margin:18px auto 6px}
-.cover .open{margin-top:8px}
-.cover .hint{font-size:12.5px;color:var(--ink3);margin-top:14px}
+  justify-content:center;align-items:center;text-align:center;gap:6px;padding:24px 0 8px}
+.cover .book{background:var(--paper);padding:34px 26px 26px;width:100%;max-width:420px}
+/* paper.css 那条 `[data-frame] > *:not(svg.frame){position:relative}` 特异度比 .tape 高
+   （:not() 里的参数也算），会把胶带和邮票按回文档流。封面这几件要真压在纸边上，写回 absolute。 */
+.cover .book > .tape,.cover .book > .stamp{position:absolute}
+.cover h1{font-size:44px;line-height:1.15;margin-bottom:6px}
+.cover .by{font-size:13.5px;color:var(--ink2);letter-spacing:.06em}
+/* 年份跨度：数字字体，跟书名分层 */
+.cover .span{font-family:var(--display);font-size:13px;letter-spacing:.14em;
+  color:var(--ink3);margin-top:4px}
+/* 邮票压在右上角纸边上，不再居中占一行 */
+.cover .stamp{position:absolute;right:12px;top:-8px;width:60px;
+  transform:rotate(6deg);z-index:2}
+/* 封面那张相纸：最近一趟真填的第一张照片 */
+.cover .shot{position:relative;width:196px;margin:20px auto 14px}
+/* paper.css 里 .ph:nth-child(n) 那几度是照片墙用的，这里胶带占了第一格，得自己定 */
+.cover .shot .ph{transform:rotate(-1.6deg)}
+.cover .cities{font-size:13.5px;color:var(--ink2);line-height:1.7}
+.cover .nums{display:flex;justify-content:center;flex-wrap:wrap;gap:8px 20px;
+  margin:14px 0 2px;padding-top:13px}
+.cover .cvc{min-width:52px}
+.cover .cvn{font-family:var(--display);font-size:23px;line-height:1.1}
+.cover .cvl{font-size:11.5px;color:var(--ink2);letter-spacing:.04em}
+.cover .open{margin-top:14px}
+/* 三枚贴纸摆一排，各歪一点 */
+.cover .sts{display:flex;justify-content:center;align-items:flex-end;gap:18px;margin-top:16px}
+.cover .st{width:40px}
+.cover .hint{font-size:12.5px;color:var(--ink3);margin-top:12px;line-height:1.7}
 
 /* ---------- 顶栏 ---------- */
 .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;
@@ -57,6 +80,27 @@ body{padding:0;min-height:100dvh}
 .strip .go{position:absolute;right:14px;top:50%;margin-top:-11px;font-size:14px;color:var(--ink3)}
 .add{margin:2px 0 4px;text-align:center;font-size:15px;padding:11px;cursor:pointer;
   background:var(--paper)}
+
+/* ---------- 扉页贴纸 ----------
+   书架最顶上一张手写说明卡。手绘框只在最外层这一个，里面三行靠 1px 细线分隔（§4.8 规整优先）。
+   折起来之后只剩右上角一个「?」，随时能叫回来。 */
+.intro{position:relative;background:var(--paper);padding:16px 16px 14px;margin:2px 0 20px}
+.intro .fold{position:absolute;right:12px;top:12px;font-size:12px;color:var(--ink3);
+  cursor:pointer;padding:4px 6px}
+.intro-title{font-size:22px;line-height:1.2;margin:0 60px 8px 0}
+.intro-line{display:flex;gap:10px;font-size:14px;line-height:1.75;padding:9px 0;
+  border-top:1px solid #ece4d5}
+.intro-line b{flex:0 0 62px;font-family:var(--display);font-weight:400;font-size:12.5px;
+  color:var(--ink2);letter-spacing:.06em;padding-top:3px}
+.intro-foot{font-family:var(--display);font-size:12.5px;color:var(--ink3);
+  border-top:1px solid #ece4d5;padding-top:9px;line-height:1.7}
+.shelf-head{display:flex;justify-content:flex-end;margin:0 0 6px}
+.ask{font-family:var(--display);font-size:13px;color:var(--ink2);cursor:pointer;
+  width:26px;height:26px;line-height:26px;text-align:center;border-radius:50%;
+  background:var(--paper);border:1px solid #ddd2ba}
+/* 示例数据开关：并排两个小按钮，跟「＋ 记一趟新的」拉开一点距离 */
+.switch{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.switch .mini{margin-top:0;background:var(--paper)}
 
 /* ---------- 详情 ---------- */
 .detail{padding-bottom:10px}
@@ -93,6 +137,11 @@ body{padding:0;min-height:100dvh}
 .mini{font-size:13.5px;padding:7px 14px;margin-top:6px;cursor:pointer;display:inline-block}
 .danger{color:#a4614f}
 .echo{font-family:var(--display);font-size:13px;color:var(--ink2);padding:4px 0 0}
+/* 补坐标那行的报错：没话说的时候连内边距都不占 */
+.echo:empty{display:none}
+/* 查不到坐标的码：一个码一行，行首把码本身立起来当标题 */
+.fix .code{flex:none;align-self:center;font-family:var(--display);font-size:14.5px;
+  letter-spacing:.06em;color:var(--ink);padding:0 2px}
 /* 默认文案一律走 placeholder，不写进 value —— 否则用户点开先得删字 */
 .f input::placeholder,.f textarea::placeholder{color:#bcae95;font-family:var(--hand)}
 /* 「填完了」的出口。顶栏那个「完成 ✓」太小，新建完一趟找不着，这里再给一个大的 */
@@ -105,6 +154,9 @@ body{padding:0;min-height:100dvh}
 svg.map{display:block;width:100%;height:auto;touch-action:manipulation}
 svg.map.globe{cursor:grab;touch-action:none}
 svg.map.globe:active{cursor:grabbing}
+/* 点图补坐标（#/map/CODE）：十字光标，提示这一下是在选位置 */
+svg.map.picking{cursor:crosshair}
+svg.map.picking.globe{cursor:crosshair}
 .legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;
   font-family:var(--display);font-size:12.5px;color:var(--ink2);padding:6px 0 0}
 .legend > span{display:flex;align-items:center;gap:6px}

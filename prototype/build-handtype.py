@@ -27,9 +27,9 @@ HERE = pathlib.Path(__file__).parent
 FACE = HERE / "fonts" / "LXGWMarkerGothic-Regular.ttf"
 FAMILY = "MarkerGothic"
 PAGES = ["hand-drawn.html", "map.html"]
-TRIPS = "data/trips.json"
-# 外壳里也有走 data-hand 的标题：封面书名、新建一趟时的默认标题。它们不在 trips.json 里
-EXTRA = "旅行手帐新的一趟未命名"
+TRIPS = ["data/trips.json", "data/samples.json"]   # 示例那几趟的标题也走 data-hand
+# 外壳里也有走 data-hand 的标题：封面书名、扉页贴纸、新建一趟时的默认标题。它们不在 json 里
+EXTRA = "旅行手帐新的一趟未命名这本子怎么用"
 
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 PUNCT = "·—…、。，；：？！（）「」『』【】《》“”‘’～￥°※→←↑↓○●★☆"
@@ -45,10 +45,11 @@ def wanted_chars() -> list:
         f = HERE / p
         if f.exists():
             s |= set(f.read_text(encoding="utf-8"))
-    f = HERE / TRIPS
-    if f.exists():
-        for t in json.loads(f.read_text(encoding="utf-8")).get("trips", []):
-            s |= set(t.get("title") or "")
+    for p in TRIPS:
+        f = HERE / p
+        if f.exists():
+            for t in json.loads(f.read_text(encoding="utf-8")).get("trips", []):
+                s |= set(t.get("title") or "")
     return sorted(c for c in s if c.isprintable() and c not in "\t\n\r")
 
 

@@ -345,6 +345,40 @@ function checkShell() {
   ok(byClass(main, 'cover').length === 1, '默认应该停在封面');
   ok(text().indexOf('旅行手帐') >= 0, '封面上没有书名');
 
+  /* 封面是一张贴满东西的书皮，不是一张可跳过的启动页（§4.8）：
+     两条胶带 + 一张贴着的相纸 + 三枚贴纸 + 四个数字。
+     数字必须跟 summary() 一个来源 —— 封面自己再算一遍，早晚跟足迹总览页对不上。 */
+  const cover = byClass(main, 'cover')[0];
+  if (cover) {
+    const s = TV.summary(ST.data.trips, ST.ctx());
+    const cityN = s.atlas.cities.filter(c => c.flown).length;
+    const tapes = byClass(cover, 'tape');
+    ok(tapes.length >= 2 && tapes.every(t => svgOf(t)), '封面上的胶带没画出来');
+    ok(byClass(cover, 'st').length === 3, '封面应该贴三枚贴纸');
+
+    const shot = byClass(cover, 'shot')[0];
+    if (ok(!!shot, '封面少了那张贴着的相纸')) {
+      const img = all(shot).filter(n => n.attrs['data-art'] || n.nodeName === 'img')[0];
+      ok(!!img, '封面相纸里没有图');
+      // 封面那张图取最近一趟真填的第一张，不是挑一张写死在代码里
+      const first = s.views.map(v => TV.wallPhotos(v)[0]).filter(Boolean)[0];
+      const want = first && first.media[0] && first.media[0].path;
+      if (img && want && /^art:/.test(want)) {
+        ok(img.attrs['data-art'] === want.slice(4),
+          '封面该用最近一趟的第一张图 ' + want + '，实际 ' + img.attrs['data-art']);
+      }
+    }
+
+    const cvn = byClass(cover, 'cvn').map(n => n.textContent);
+    if (ok(cvn.length === 4, '封面那排数字应该是四格，实际 ' + cvn.length)) {
+      ok(cvn[0] === String(s.done.length) && cvn[1] === String(s.days)
+        && cvn[2] === TV.fmtMoney(s.atlas.kmFlown) && cvn[3] === String(cityN),
+        '封面数字跟 summary() 对不上：' + cvn.join(' / '));
+    }
+    ok(!s.next || text().indexOf(s.next.trip.title) >= 0,
+      '有待出行的一趟，封面就该报一句「下一趟」');
+  }
+
   nav('#/shelf');
   ok(byClass(main, 'tl-item').length === ST.data.trips.length,
     '时间轴 ' + byClass(main, 'tl-item').length + ' 条 ≠ 旅行 ' + ST.data.trips.length + ' 趟');
@@ -352,6 +386,53 @@ function checkShell() {
     '书架少了分区标题');
   ok(document.getElementById('tabs').getElementsByTagName('a')[0]
     .classList.contains('on'), '书架 tab 没点亮');
+
+  /* 扉页贴纸（§4.8）：第一次进来是展开的，三行说明都在；点「折起」收掉并记住，
+     只留右上角一个「?」能叫回来。做成可跳过的启动页就是 PPT 味，所以它必须长在书架上。 */
+  if (ok(byClass(main, 'intro').length === 1, '书架顶上应该有一张扉页说明卡')) {
+    ok(byClass(main, 'intro-line').length === 3, '扉页说明应该是三行');
+    ok(text().indexOf('derive()') >= 0 && text().indexOf('atlas()') >= 0,
+      '扉页得说清数字是现算的，不是写死的');
+    const fold = tapped(main, '折起 ×');
+    if (ok(!!fold, '扉页上找不到「折起」')) {
+      fold._fire('click');
+      ok(!byClass(main, 'intro').length, '点了折起，扉页还在');
+      nav('#/shelf');
+      ok(!byClass(main, 'intro').length, '折起来的扉页刷新之后又冒出来了（localStorage 没记住）');
+      const ask = tapped(main, '?');
+      if (ok(!!ask, '折起来之后书架右上角得留个「?」')) {
+        ask._fire('click');
+        ok(byClass(main, 'intro').length === 1, '点「?」没把扉页叫回来');
+      }
+    }
+  }
+
+  /* 载入示例 / 清空（§4.8 空状态）：默认只装 2+2，剩下几趟点了才叠进来。
+     跟 #/about 那个「恢复示例数据」不是一回事 —— 那个撤回改动，这个是从空本子开始。 */
+  const nBase = ST.data.trips.length;
+  const nSample = ST.samples().length;
+  const keep = JSON.parse(JSON.stringify(ST.data.trips));
+  ok(nBase === 4, '默认应该只装 4 趟（2 已旅行 + 2 待出行），实际 ' + nBase);
+  ok(nSample >= 1, 'data/samples.json 没打进 bundle');
+  const loadBtn = tapped(main, '载入示例 · 另 ' + nSample + ' 趟');
+  if (ok(!!loadBtn, '书架上找不到「载入示例」')) {
+    loadBtn._fire('click');
+    ok(ST.data.trips.length === nBase + nSample,
+      '载入示例没叠上：' + nBase + ' → ' + ST.data.trips.length);
+    ok(!ST.pending().length, '载完之后不该还剩待载入的示例');
+    ok(!tapped(main, '载入示例 · 另 0 趟'), '示例全载完了，按钮该收起来');
+    const clear = tapped(main, '清空');
+    if (ok(!!clear, '书架上找不到「清空」')) {
+      clear._fire('click');
+      ok(!ST.data.trips.length, '清空之后仓库里还有行程');
+      ok(!byClass(main, 'tl-item').length, '清空之后书架上还有行');
+      ok(ST.pending().length === nSample, '清空之后示例应该能再载回来');
+    }
+  }
+  // 后面的断言跑在出厂那四趟上（发出去的就是这一份），所以放回去
+  ST.change(d => { d.trips = keep; });
+  App.render();
+  ok(ST.data.trips.length === nBase, '恢复出厂四趟失败');
 
   const plan = ST.data.trips.filter(t =>
     TV.statusOf(t, ST.ctx().now) === 'planned')[0];
@@ -509,6 +590,74 @@ function checkShell() {
       + ' + 城市 ' + at.cities.length);
     ok(titles.some(s => s.indexOf(at.routes[0].from + ' → ' + at.routes[0].to) >= 0),
       '航线热区上没有起降码：' + titles.slice(0, 3).join(' / '));
+  }
+
+  /* 查不到坐标就让用户补（§3.2 不静默猜）：
+     编辑器一个码给一行，填经纬度或者去 #/map/CODE 点一下，写进本机那层 myPlaces。
+     这里连着验四件事：越界不收、补完立刻算出公里数、地图多一条线、刷新还在。 */
+  const nRoutes = () => TV.atlas(ST.data.trips, ST.ctx()).routes.length;
+  nav('#/trip/' + fresh.id + '/edit');
+  const toField = fieldNamed(main, '到');
+  if (ok(!!toField, '编辑器里找不到航段的「到」')) {
+    toField.value = 'ZZZ';
+    toField._fire('change');
+    const broken = nRoutes();
+    ok(TV.derive(ST.trip(fresh.id), ST.ctx()).unknownCodes.indexOf('ZZZ') >= 0,
+      'ZZZ 查不到坐标，却没进 unknownCodes');
+    const fix = byClass(main, 'fix')[0];
+    if (ok(!!fix, '查不到坐标的码应该给一行补坐标的输入框')) {
+      ok(fix.textContent.indexOf('ZZZ') >= 0, '补坐标那行没写是哪个码');
+      ok(!!labeled(fix, '在地图上点一下'), '补坐标那行少了「在地图上点一下」');
+      const lon = fieldNamed(fix, '经度 E'), lat = fieldNamed(fix, '纬度 N');
+      if (ok(!!lon && !!lat, '补坐标那行少了经度 / 纬度')) {
+        lat.value = '31.2'; lat._fire('change');
+        ok(!ST.places().ZZZ, '只填了纬度就存进去了 —— 缺一半不该收');
+        lon.value = '999'; lon._fire('change');
+        ok(!ST.places().ZZZ, '经度 999 不在地球上，不该收');
+        ok(byClass(main, 'danger').some(n => n.textContent.indexOf('不在地球上') >= 0),
+          '填了越界的坐标得当场说一声，不能默默不动');
+        lon.value = '121.47'; lon._fire('change');
+        ok(!!ST.places().ZZZ && ST.isMine('ZZZ'), '补完的坐标没进 myPlaces');
+        ok(!ST.data.places.ZZZ, '用户补的坐标不许写回 data/places.json 那一层');
+        const v2 = TV.derive(ST.trip(fresh.id), ST.ctx());
+        ok(!v2.unknownCodes.length, '补完坐标之后不该还有查不到的码');
+        ok(v2.legs[0].km > 0, '补完坐标这一段就该算得出公里数，实际 ' + v2.legs[0].km);
+        ok(nRoutes() === broken + 1, '补完坐标之后地图上该多一条航线');
+        // 刷新还在：myPlaces 跟 trips 一起存 localStorage
+        ST.load(ctx.DATA); App.render();
+        ok(ST.isMine('ZZZ'), '刷新之后自己补的坐标丢了');
+      }
+    }
+  }
+
+  // #/map/CODE 是「点图补坐标」模式：顶栏换成取消，地图光标换十字
+  nav('#/map/ZZZ');
+  ok(text().indexOf('ZZZ') >= 0 && !!tapped(main, '取消 ×'),
+    '#/map/CODE 应该进补坐标模式，顶栏给个「取消」');
+  const pickSvg = svgOf(byClass(main, 'map-stage')[0] || new El('div'));
+  ok(!!pickSvg && /picking/.test(pickSvg.attrs.class || ''),
+    '补坐标模式下地图 svg 上应该有 picking（十字光标）');
+
+  /* 点画布的那一下 → 反投影成经纬度。摊平视图中心是 160°E / 0°N（分割线在大西洋上），
+     所以点正中央就该拿到这两个数；量不到画布尺寸的时候一律不猜。 */
+  if (pickSvg) {
+    const MV = ctx.MapView;
+    pickSvg.offsetWidth = MV.W; pickSvg.offsetHeight = MV.H;
+    ST.dropPlace('ZZZ');
+    pickSvg._fire('click', { clientX: MV.W / 2, clientY: MV.H / 2 });
+    const got = ST.places().ZZZ;
+    if (ok(!!got, '在地图上点一下应该把坐标补上')) {
+      ok(Math.abs(got.ll[0] - 160) < 2 && Math.abs(got.ll[1]) < 2,
+        '点正中央应该反投影成 160°E / 0°N，实际 ' + got.ll.join(', '));
+      ST.dropPlace('ZZZ');
+      pickSvg._fire('click', { clientX: MV.W / 2 - 100, clientY: MV.H / 2 });
+      ok(ST.places().ZZZ.ll[0] < got.ll[0], '往左点经度应该更小');
+      ST.dropPlace('ZZZ');
+      pickSvg.offsetWidth = 0;                       // 量不到尺寸（还没排版）
+      pickSvg._fire('click', { clientX: 10, clientY: 10 });
+      ok(!ST.places().ZZZ, '量不到画布尺寸就不该猜一个坐标出来');
+      ST.dropPlace('ZZZ');
+    }
   }
 
   /* 足迹总览：每个数字都能从 Store 现算出来 */
@@ -756,6 +905,32 @@ function dumpSvg(document, pc) {
 
 /* ==================== 五、main ==================== */
 
+/* 插画库全量自检：ART 里每一张都得画得出来，包括这一页没挂出来的那些 ——
+   不然新加的场景要等到哪趟行程真用上了才暴雷。
+   单独开一份页面来挂：check() 那份要跟「同 seed 出同一张图」比对，不能往里塞额外节点。
+   返回的 document 给 --svg 用，这样导出的是「卡片 + 整个插画库」。 */
+function checkArt() {
+  const { document, ctx } = runPage('hand-drawn.html');
+  const wall = document.createElement('div');
+  document.body.appendChild(wall);
+  const names = Object.keys(ctx.Sketch.ART);
+  names.forEach(n => {
+    const host = document.createElement('div');
+    host.setAttribute('data-art', n);
+    wall.appendChild(host);
+  });
+  ctx.Sketch.paintArt();
+  // 场景图是一整幅画，节点少于 8 个基本等于没画完；图标/贴纸本来就是两三笔
+  const thin = names.filter((n, i) => {
+    const s = svgOf(wall.children[i]);
+    return !s || s.children.length < (ctx.Sketch.ART[n].w === 150 ? 8 : 2);
+  });
+  ok(!thin.length, '这些插图画出来是空的或者太单薄：' + thin.join('、'));
+  const scenes = names.filter(n => ctx.Sketch.ART[n].w === 150);
+  ok(scenes.length >= 11, '场景插图太少，卡片之间会长得一样：' + scenes.length);
+  return document;
+}
+
 const t0 = Date.now();
 const doc = check();
 
@@ -763,10 +938,11 @@ const doc = check();
 const a = ser(doc.documentElement), b = ser(runPage('hand-drawn.html').document.documentElement);
 ok(a === b, '两次渲染结果不一致 —— seed 没锁住');
 
+const artDoc = checkArt();
 checkShell();
 const pc = checkPostcard();
 
-if (process.argv.includes('--svg')) dumpSvg(doc, pc);
+if (process.argv.includes('--svg')) dumpSvg(artDoc, pc);
 
 // 导出是异步的（Image.onload / Promise），等微任务跑完再收尾
 Promise.resolve().then(() => {

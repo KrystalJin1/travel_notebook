@@ -32,11 +32,12 @@ ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 PUNCT = "·—…、。，；：？！（）「」『』【】《》〈〉“”‘’～￥°※→←↑↓○●◎★☆　"
 LATIN_EXTRA = "①②③④⑤⑥⑦⑧⑨⑩ºªµ×÷±"
 # 会出现在页面上的字都得扫一遍：文案散在 html / js / data 三处，漏一个文件就掉字。
+# samples.json 也要扫 —— 那几趟点「载入示例」才进来，但进来之后一样要显示。
 # 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、test-page.js（只在终端里）。
 SOURCES = ["index.html", "hand-drawn.html", "map.html",
            "app.js", "store.js", "trip.js", "kernel.js", "sketch.js", "map.js",
            "postcard.js", "bake.js",
-           "data/trips.json", "data/places.json"]
+           "data/trips.json", "data/places.json", "data/samples.json"]
 
 
 def used_chars() -> str:

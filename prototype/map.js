@@ -245,7 +245,7 @@
         c.name + '　去过 ' + c.trips.length + ' 次', () => st.onPick(c)));
     }
 
-    svg.setAttribute('class', 'map' + (globe ? ' globe' : ''));
+    svg.setAttribute('class', 'map' + (globe ? ' globe' : '') + (st.picking ? ' picking' : ''));
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     svg.appendChild(frag);
     return { land: (landPath.match(/M/g) || []).length, routes: drawn };
@@ -262,9 +262,24 @@
     el.appendChild(t);
     return el;
   }
+  /* 屏幕上点的那一下 → 经纬度。反投影拿不到点就返回 null（§3.2 一律不猜）：
+     地球背面、摊平视图点到画布外的留白，都属于「这一下不算」。 */
+  function toLL(svg, st, e) {
+    const box = svg.getBoundingClientRect && svg.getBoundingClientRect();
+    if (!box || !box.width || !box.height) return null;   // 量不到尺寸就别硬算
+    const x = (e.clientX - box.left) * W / box.width;
+    const y = (e.clientY - box.top) * H / box.height;
+    const inv = projection(st.view, st.rot).invert;
+    const ll = inv && inv([x, y]);
+    if (!ll || !isFinite(ll[0]) || !isFinite(ll[1])) return null;
+    if (Math.abs(ll[0]) > 180 || Math.abs(ll[1]) > 90) return null;
+    return [Math.round(ll[0] * 100) / 100, Math.round(ll[1] * 100) / 100];
+  }
+
   /* ---------- 挂载 ----------
      host 里放一个 <svg>，返回一个手柄：repaint / setView / stats。
-     opt = { view, onPick(route|city), onStatus(text) } */
+     opt = { view, onPick(route|city), onStatus(text), onPickLL([lon,lat]) }
+     给了 onPickLL 就是「点图补坐标」模式：光标换成十字，点画布任意一处回一个经纬度。 */
   function mount(host, atlas, opt) {
     const o = opt || {};
     const svg = mk('svg');
@@ -276,6 +291,7 @@
       view: o.view === 'globe' ? 'globe' : 'flat',
       rot: [-150, -10],            // 地球视图当前旋转；摊平视图用固定投影
       tol: 2, drag: null, atlas: atlas,
+      picking: !!o.onPickLL,
       onPick: o.onPick || function () {}
     };
 
@@ -286,13 +302,16 @@
     }
 
     /* 拖着转地球：像素 -> 经纬增量，按当前半径换算 */
+    let moved = 0;
     svg.addEventListener('pointerdown', e => {
+      moved = 0;
       if (st.view !== 'globe') return;
       st.drag = { x: e.clientX, y: e.clientY, rot: st.rot.slice() };
       if (svg.setPointerCapture && e.pointerId != null) svg.setPointerCapture(e.pointerId);
     });
     svg.addEventListener('pointermove', e => {
       if (!st.drag) return;
+      moved = Math.max(moved, Math.abs(e.clientX - st.drag.x) + Math.abs(e.clientY - st.drag.y));
       const k = 260 / projection(st.view, st.rot).scale() * 0.9;
       st.rot = [st.drag.rot[0] + (e.clientX - st.drag.x) * k,
         Math.max(-85, Math.min(85, st.drag.rot[1] - (e.clientY - st.drag.y) * k))];
@@ -301,6 +320,14 @@
     const up = () => { if (st.drag) { st.drag = null; repaint(); } };
     svg.addEventListener('pointerup', up);
     svg.addEventListener('pointercancel', up);
+
+    // 补坐标模式：航线/城市的热区不导航（onPick 由页面传成空函数），
+    // 点击冒泡到 svg 这一层统一处理。刚拖过地球的那一下不算点选。
+    svg.addEventListener('click', e => {
+      if (!o.onPickLL || moved > 4) return;
+      const ll = toLL(svg, st, e);
+      if (ll) o.onPickLL(ll);
+    });
 
     return {
       svg, repaint,

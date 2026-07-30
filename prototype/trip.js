@@ -133,7 +133,11 @@
       pct: budget ? Math.min(100, Math.round(spendTotal / budget * 100)) : 0,
       countdown: untilStart,
       dateLabel: fmtDate(trip.time.start) + ' – ' + fmtDate(trip.time.end, false),
-      unknownPlaces: legs.filter(l => l.unknown).map(l => l.unknown && (l.from + '→' + l.to))
+      unknownPlaces: legs.filter(l => l.unknown).map(l => l.unknown && (l.from + '→' + l.to)),
+      // 具体是哪几个码查不到 —— 编辑器照这个列表一个码给一行补坐标，
+      // 不用去拆「SHA→HKG」这种字符串（§3.2 查不到就让用户手填）
+      unknownCodes: K.distinct(legs.reduce((a, l) => a.concat(
+        l.fromLL ? [] : [l.from], l.toLL ? [] : [l.to]), []))
     };
   }
 

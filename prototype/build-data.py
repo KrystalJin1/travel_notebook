@@ -6,8 +6,11 @@
 运行时吃的是这里生成的 js。
 
 用法：python3 build-data.py
-输入：data/trips.json  data/places.json
-输出：data/bundle.js   ->  window.DATA = {baseCurrency, rates, places, trips}
+输入：data/trips.json  data/places.json  data/samples.json
+输出：data/bundle.js   ->  window.DATA = {baseCurrency, rates, places, trips, samples}
+
+samples 是「点了才叠进来」的那几趟（§4.8 空状态）：默认书架只有 trips 里的 2+2，
+示例跟着 bundle 一起发但不进 Store，所以离线单文件里也点得动，不用再发一次请求。
 """
 import json
 import pathlib
@@ -28,12 +31,14 @@ def strip(node):
 def main():
     trips = strip(json.loads((DATA / "trips.json").read_text(encoding="utf-8")))
     places = strip(json.loads((DATA / "places.json").read_text(encoding="utf-8")))
+    samples = strip(json.loads((DATA / "samples.json").read_text(encoding="utf-8")))
 
     bundle = {
         "baseCurrency": trips.get("baseCurrency", "CNY"),
         "rates": trips.get("rates", {"CNY": 1}),
         "places": places,
         "trips": trips.get("trips", []),
+        "samples": samples.get("trips", []),
     }
     body = json.dumps(bundle, ensure_ascii=False, indent=1, sort_keys=False)
     out = DATA / "bundle.js"
@@ -43,9 +48,11 @@ def main():
         encoding="utf-8")
 
     n_entries = sum(len(t.get("entries", [])) for t in bundle["trips"])
+    n_sample = sum(len(t.get("entries", [])) for t in bundle["samples"])
     print(f"{out.relative_to(HERE)}  {out.stat().st_size} bytes  "
           f"{len(bundle['trips'])} 个行程 / {n_entries} 条 entry / "
-          f"{len(places)} 个地点")
+          f"{len(places)} 个地点 / "
+          f"示例 {len(bundle['samples'])} 趟 {n_sample} 条")
 
 
 if __name__ == "__main__":

@@ -47,7 +47,7 @@
     const p = raw.split('/').filter(Boolean);
     if (p[0] === 'debug') { document.body.classList.add('debug'); return { name: 'shelf' }; }
     if (p[0] === 'shelf') return { name: 'shelf' };
-    if (p[0] === 'map') return { name: 'map' };
+    if (p[0] === 'map') return { name: 'map', pick: p[1] || null };  // #/map/HKG = 点图补坐标
     if (p[0] === 'stats') return { name: 'stats' };
     if (p[0] === 'about') return { name: 'about' };
     if (p[0] === 'trip' && p[1]) {
@@ -63,29 +63,143 @@
 
   /* ================= 三、封面 ================= */
 
+  /* 封面 = 一张贴满东西的书皮，不是一张启动页。
+     手绘框只有最外面 .book 这一个（§4.8 规整优先），里面的层次靠胶带、相纸、
+     贴纸和一条细线拉开，不再往里套第二层抖动的方框。
+
+     上面每个数字、城市名、年份跨度都出自 TripView.summary()，跟足迹总览页同一个函数
+     （§3.1 页面不许自己再算一遍）：清空示例数据，封面立刻变成一本空本子。 */
   function coverView() {
-    const trips = ST.data.trips || [];
-    const sum = trips.reduce((a, t) => {
-      const v = T.derive(t, ST.ctx());
-      return { d: a.d + v.days, km: a.km + v.km };
-    }, { d: 0, km: 0 });
+    const s = T.summary(ST.data.trips || [], ST.ctx());
+    const at = s.atlas;
+    const cities = at.cities.filter(c => c.flown);
+
+    // 年份跨度只看走过的那些（byYear 里日期没填的记成「未知」，跳过）
+    const ys = s.byYear.map(r => r.year).filter(y => typeof y === 'number');
+    const span = ys.length
+      ? (ys[0] === ys[ys.length - 1] ? String(ys[0]) : ys[0] + ' – ' + ys[ys.length - 1])
+      : null;
+
+    /* 封面那张相纸：直接拿最近一趟真填的第一张照片（T.order 已经把最近的排在前面），
+       所以换一趟数据封面就换一张图，不是挑一张好看的写死在这。
+       art: 开头的是内置手绘插画，其余按图片路径贴 —— 跟卡片上的照片墙是同一套规则。 */
+    const shot = () => {
+      const e = s.views.map(v => T.wallPhotos(v)[0]).filter(Boolean)[0];
+      const m = e && e.media[0];
+      const inner = m && !/^art:/.test(m.path)
+        ? h('img', { class: 'art', src: m.path, alt: e.title || '' })
+        : h('div', { class: 'art', 'aria-hidden': 'true',
+            'data-art': m ? m.path.slice(4) : 'fuji' });
+      return h('div', { class: 'shot' }, [
+        h('div', { class: 'tape', style: 'top:-13px;left:50%;margin-left:-56px;'
+          + 'transform:rotate(-2.5deg)', 'data-tape': '#e9bdb0', 'data-seed': 31 }),
+        h('div', { class: 'ph', 'data-frame': 'rect', 'data-seed': 29 }, [
+          inner,
+          h('div', { class: 'cap',
+            text: e ? (e.place && e.place.name || e.title || '') : '还没有照片' })
+        ])
+      ]);
+    };
+
+    const cell = (n, l) => h('div', { class: 'cvc' }, [
+      h('div', { class: 'cvn', text: n }), h('div', { class: 'cvl', text: l })
+    ]);
+
+    // 一句现在的话：下一趟还有几天 / 有计划但没填日期 / 空本子
+    const hint = s.next
+      ? '下一趟 · ' + named(s.next.trip)
+        + (s.next.countdown != null && s.next.countdown >= 0
+          ? '，还有 ' + s.next.countdown + ' 天' : '')
+      : s.plan.length ? '还有 ' + s.plan.length + ' 趟在计划里'
+        : '本子还是空的 —— 翻开，记第一趟';
 
     const open = tappable(h('div', { class: 'btn open', 'data-frame': 'rect',
       'data-seed': 11, 'data-fill': '#a8c8b4', text: '翻开 →' }), () => go('#/shelf'));
 
+    // 三枚贴纸摆一排，各歪一点：手贴上去的不会齐
+    const stick = (name, deg) => h('div', { class: 'st', 'aria-hidden': 'true',
+      'data-art': name, style: 'transform:rotate(' + deg + 'deg)' });
+
     return h('div', { class: 'view cover' }, [
       h('div', { class: 'book', 'data-frame': 'rect', 'data-seed': 7 }, [
+        // 书皮贴在台面上：左上、右下各一条 washi 胶带，压出纸边
+        h('div', { class: 'tape', style: 'top:-14px;left:20px;transform:rotate(-5deg)',
+          'data-tape': '#a8c8b4', 'data-seed': 17 }),
+        h('div', { class: 'tape', style: 'bottom:-13px;right:18px;transform:rotate(3.5deg)',
+          'data-tape': '#f0cd7f', 'data-seed': 19 }),
         h('div', { class: 'stamp', 'data-art': 'stamp', 'aria-hidden': 'true' }),
         h('h1', { 'data-hand': true, text: '旅行手帐' }),
         h('div', { class: 'by', text: 'TRAVEL NOTEBOOK · 手绘' }),
+        span ? h('div', { class: 'span', text: span }) : null,
+        shot(),
+        cities.length
+          ? h('div', { class: 'cities', text: cities.slice(0, 4).map(c => c.name).join(' · ')
+              + (cities.length > 4 ? ' 等 ' + cities.length + ' 座' : '') })
+          : null,
+        h('div', { class: 'nums', 'data-frame': 'hr', 'data-seed': 13 }, [
+          cell(s.done.length, '趟'),
+          cell(s.days, '天'),
+          cell(T.fmtMoney(at.kmFlown), '公里'),
+          cell(cities.length, '座城市')
+        ]),
         open,
-        h('div', { class: 'hint', text: trips.length + ' 趟 · ' + sum.d + ' 天 · '
-          + T.fmtMoney(sum.km) + ' 公里' })
+        h('div', { class: 'sts' }, [stick('plane', -8), stick('camera', 4), stick('ticket', -3)]),
+        h('div', { class: 'hint', text: hint })
       ])
     ]);
   }
 
   /* ================= 四、书架：竖向时间轴 ================= */
+
+  /* 扉页贴纸：书架最顶上一张手写说明卡（§4.8）。第一次进来是展开的，点「折起」收掉，
+     localStorage 记住不再展开 —— 右上角那个「?」能叫回来。
+     为什么不做成封面和书架中间的一页：那就是一张可跳过的启动页，PPT 味。 */
+  const NOTE = 'travel-notebook/intro';
+  const noteOff = () => {
+    try { return localStorage.getItem(NOTE) === 'off'; } catch (e) { return false; }
+  };
+  const setNote = off => {
+    try { off ? localStorage.setItem(NOTE, 'off') : localStorage.removeItem(NOTE); }
+    catch (e) { /* 隐私模式下会抛，那就这一次有效 */ }
+    render();
+  };
+
+  function introCard() {
+    const line = (k, v) => h('div', { class: 'intro-line' }, [
+      h('b', { text: k }), h('span', { text: v })
+    ]);
+    return h('div', { class: 'intro', 'data-frame': 'rect', 'data-seed': 23 }, [
+      tappable(h('span', { class: 'fold', text: '折起 ×' }), () => setNote(true)),
+      h('div', { class: 'intro-title', 'data-hand': true, text: '这本子怎么用' }),
+      line('记什么', '一趟走完，照片、去过哪几座城市、花了多少钱，拼成一页能看的东西。'),
+      line('怎么加', '拉到底点「＋ 记一趟新的」，进去右上角「编辑 ✎」填日期、航段、花销 —— '
+        + '每填一个数字，卡片、地图、足迹立刻跟着变。'),
+      line('数字哪来', '全是打开这页时现算的：卡片读 derive()，地图读 atlas()，足迹读 summary()，'
+        + '没有一处是写死的。'),
+      h('div', { class: 'intro-foot',
+        text: '书架上这几趟是示例。想从空本子开始记自己的，拉到底点「清空」。' })
+    ]);
+  }
+
+  const askBtn = () => tappable(h('span', { class: 'ask', title: '这本子怎么用', text: '?' }),
+    () => setNote(false));
+
+  /* 示例数据的开关。跟 #/about 那个「恢复示例数据」不是一回事：
+     那个是撤回本机改动、回到出厂的四趟；这个是一趟都不留，从空本子开始记。
+     示例跟着 bundle 一起发（data/samples.json），所以离线单文件里也点得动。 */
+  function sampleSwitch() {
+    const left = ST.pending().length;
+    const btn = (label, seed, fn) => tappable(
+      h('div', { class: 'mini', 'data-frame': 'rect', 'data-seed': seed, text: label }), fn);
+    return h('div', { class: 'switch' }, [
+      left ? btn('载入示例 · 另 ' + left + ' 趟', 55, () => { ST.addSamples(); render(); }) : null,
+      (ST.data.trips || []).length
+        ? btn('清空', 66, () => {
+            if (confirm('把书架清空，从空本子开始记？示例还能再载入回来。')) { ST.clearTrips(); render(); }
+          })
+        : null
+    ]);
+  }
 
   /* 书架上一行 = 一趟。这里故意不给每个数字套手绘框：一屏十几个抖动的小方框
      会把版面搅花，手绘留给外框那一个，数字排成一行小字（§4.8 规整优先）。 */
@@ -112,8 +226,10 @@
   }
 
   /* 分栏按算出来的状态（§3.2）：日期一过，那趟自己从「待出行」挪到「已旅行」，
-     用户不用去改下拉框。「旅行中」只在真有一趟正在走的时候才出现。 */
-  function shelfView() {
+     用户不用去改下拉框。「旅行中」只在真有一趟正在走的时候才出现。
+     plain = 宽屏左侧书脊上那一份：只要时间轴，扉页和开关归主列（同一份 routes，
+     区别只在「一屏显示几层」§4.8）。 */
+  function shelfView(plain) {
     const trips = ST.ordered();
     const statusOf = t => T.derive(t, ST.ctx()).status;
     const pick = fn => trips.filter(t => fn(statusOf(t)));
@@ -130,10 +246,12 @@
     });
 
     return h('div', { class: 'view shelf' }, [
+      plain ? null : (noteOff() ? h('div', { class: 'shelf-head' }, [askBtn()]) : introCard()),
       ...group('旅行中 · NOW', pick(s => s === 'ongoing'), null),
       ...group('已旅行 · PAST', pick(s => s === 'done'), '还没有记完的旅行。'),
       ...group('待出行 · PLANNED', pick(T.isPlan), '还没有计划。点下面新建一趟。'),
-      add
+      add,
+      plain ? null : sampleSwitch()
     ]);
   }
 
@@ -309,6 +427,13 @@
 
   const row = kids => h('div', { class: 'f' }, kids);
 
+  // 经纬度不能用 num()：num() 把空框读成 0，而 0 是条真经线（本影子午线）。
+  // 空 → null，让「还没填」和「填了 0」分得开。
+  const numOr = s => {
+    s = (s == null ? '' : String(s)).trim();
+    return s === '' || isNaN(Number(s)) ? null : Number(s);
+  };
+
   /* ================= 七、编辑：填数字的地方 ================= */
 
   /* 状态那一格写回仓库的规则：'auto' = 不锁，存一笔当下算出来的值（导出的 JSON 里不留旧状态）；
@@ -330,6 +455,7 @@
     const ofType = ty => (t.entries || []).filter(e => e.type === ty);
     const pt = fn => { ST.patchTrip(t.id, fn); redraw.card(); };
     const pe = (e, fn) => { ST.patchEntry(t.id, e.id, fn); redraw.card(); };
+    const peAll = (e, fn) => { ST.patchEntry(t.id, e.id, fn); redraw.all(); };
     const grow = (type, patch) => { ST.addEntry(t.id, type, patch); redraw.all(); };
     const cut = e => { ST.removeEntry(t.id, e.id); redraw.all(); };
     const mini = (label, fn) => tappable(h('div', { class: 'mini', 'data-frame': 'rect',
@@ -361,24 +487,53 @@
         + (v.statusLocked ? '：锁住了，日期到了也不动。' : '：按日期自动推进。') })
     ];
 
-    /* --- 航段：航线只认这里填的三字码，不从别处猜（§3.2） --- */
+    /* --- 航段：航线只认这里填的三字码，不从别处猜（§3.2） ---
+       查不到坐标的码，一个码给一行：手填经纬度，或者去地图上点一下。
+       填进去的存在本机（Store.myPlaces），不动 data/places.json —— 那是构建产物，
+       用户在浏览器里改不了它。查表里以后补上了，查表那份自然接管。 */
+    const fixRow = code => {
+      const d = { name: '', lon: null, lat: null };
+      const warn = h('div', { class: 'echo danger' });        // 空的时候 CSS 收掉
+      const put = () => {
+        if (d.lon == null || d.lat == null) return;           // 还没填完，先不吵
+        if (!ST.setPlace(code, { name: d.name || code, ll: [d.lon, d.lat] })) {
+          warn.textContent = '这个点不在地球上：经度要在 −180~180，纬度要在 −90~90';
+          return;
+        }
+        redraw.all();
+      };
+      return h('div', { class: 'fix' }, [
+        row([
+          h('b', { class: 'code', text: code }),
+          txt('叫什么', '', x => { d.name = x.trim(); put(); }, null, '比如「香港」'),
+          txt('经度 E', '', x => { d.lon = numOr(x); put(); }, 'n', '114.17'),
+          txt('纬度 N', '', x => { d.lat = numOr(x); put(); }, 'n', '22.32'),
+          mini('在地图上点一下', () => go('#/map/' + encodeURIComponent(code)))
+        ]),
+        warn
+      ]);
+    };
+
     const legs = [
       h('h3', { text: '航段' }),
       h('div', { class: 'tip', text: '填机场或城市的三字码：SHA / HND / KIX。'
-        + '查不到坐标的会在下面列出来 —— 要补就改 data/places.json 再重新构建。' }),
+        + '查不到坐标的会在下面单独列出来，补一次就记住了。' }),
       ...v.legs.map(l => row([
-        txt('从', l.from, x => pe(l.entry, e => { e.data.from = x.toUpperCase(); })),
-        txt('到', l.to, x => pe(l.entry, e => { e.data.to = x.toUpperCase(); })),
+        // 起降码改了，「查不到坐标」那几行得当场跟着变，所以这两格重画整个编辑器
+        txt('从', l.from, x => peAll(l.entry, e => { e.data.from = x.toUpperCase(); })),
+        txt('到', l.to, x => peAll(l.entry, e => { e.data.to = x.toUpperCase(); })),
         txt('航班号', l.code, x => pe(l.entry, e => { e.data.code = x; }), null, '选填'),
         dateIn('日期', l.entry.time && l.entry.time.start,
           x => pe(l.entry, e => { e.time.start = x; })),
         chk('已飞', l.flown, x => pe(l.entry, e => { e.data.flown = x; })),
         del(() => cut(l.entry))
       ])),
-      v.unknownPlaces.length
+      v.unknownCodes.length
         ? h('div', { class: 'echo danger',
-            text: '查不到坐标：' + v.unknownPlaces.join('、') + '，这几段的航线画不出来' })
+            text: '这几个码查不到坐标：' + v.unknownCodes.join('、')
+              + '，航线先画不出来。补上坐标就有了：' })
         : null,
+      ...v.unknownCodes.map(fixRow),
       mini('＋ 加一段', () => grow('leg'))
     ];
 
@@ -470,10 +625,17 @@
   /* ================= 八、地图 ================= */
 
   /* 地图上每一段都对应用户真填的一条 leg（TripView.atlas 算好），
-     点航线或城市就跳去那一趟。坐标查不到的段不画，名单在下面列出来，不猜。 */
-  function mapView() {
+     点航线或城市就跳去那一趟。坐标查不到的段不画，名单在下面列出来，不猜。
+
+     #/map/HKG 是「点图补坐标」模式（§3.2）：从编辑器过来，点画布任意一处，
+     把那一点反投影成经纬度存进本机，然后退回编辑器。地球视角下反投影可能落在
+     背面（invert 给不出点），那次点击就当没点。 */
+  function mapView(r) {
     const at = T.atlas(ST.data.trips || [], ST.ctx());
-    const bar = topbar('地图');
+    const pick = r && r.pick;
+    const bar = pick
+      ? topbar('给 ' + pick + ' 点个位置', '取消 ×', back)
+      : topbar('地图');
     const box = h('div', { class: 'map-stage' });
     const capt = h('div', { class: 'echo', text: '正在画…' });
     const lgDone = h('i'), lgPlan = h('i');
@@ -492,14 +654,18 @@
     if (miss) {
       box.appendChild(h('div', { class: 'empty', text: '地图画不出来：' + miss + ' 没加载。' }));
       capt.textContent = '';
-    } else if (!at.routes.length) {
+    } else if (!at.routes.length && !pick) {
       box.appendChild(h('div', { class: 'empty',
         text: '还没有航段。去某一趟的编辑页「＋ 加一段」，这里就有线了。' }));
       capt.textContent = '';
     } else {
       const ctrl = root.MapView.mount(box, at, {
         onStatus: s => { capt.textContent = s; },
-        onPick: x => go('#/trip/' + (x.tripId || x.trips[0]))
+        // 补坐标的时候，点线/点城市不再跳走 —— 那一下也是在选位置
+        onPick: pick ? function () {} : x => go('#/trip/' + (x.tripId || x.trips[0])),
+        onPickLL: pick ? (ll => {
+          if (ST.setPlace(pick, { name: pick, ll: ll })) back();
+        }) : null
       });
       const seg = h('div', { class: 'seg' });
       [['flat', '摊平'], ['globe', '地球']].forEach(([v, label]) => {
@@ -529,16 +695,21 @@
 
     return h('div', { class: 'view' }, [
       bar,
+      pick ? h('div', { class: 'editor' }, [
+        h('div', { class: 'tip', text: '「' + pick + '」查不到坐标。在地图上点它大概的位置就行 ——'
+          + ' 世界地图这个尺度上差几十公里看不出来，回去还能改。'
+          + '摊平视图点起来准一些；地球背面点不到，先拖一下转过来。' })
+      ]) : null,
       h('div', { class: 'editor' }, [box, capt, legend]),
       h('div', { class: 'editor' }, [
         h('h3', { text: '航线一览' }),
         h('div', { class: 'tip', text: '点地图上的线或城市，也点这里的任意一行，都能跳到那一趟。'
-          + '坐标全部来自 data/places.json。' }),
+          + '坐标先查 data/places.json，再叠上你自己补过的那些（存在这台机器上）。' }),
         ...rows,
         rows.length ? null : h('div', { class: 'empty', text: '还没有航段。' }),
         at.unknown.length
-          ? h('div', { class: 'echo danger', text: '这些码在 data/places.json 里查不到，'
-              + '所以画不出来：' + at.unknown.join('、') })
+          ? h('div', { class: 'echo danger', text: '这些码还查不到坐标，所以画不出来：'
+              + at.unknown.join('、') + '。去那一趟的编辑页「航段」那一段补一下。' })
           : null,
         h('div', { class: 'echo', text: facts() })
       ])
@@ -768,17 +939,19 @@
 
   function viewOf(r) {
     if (r.name === 'cover') return coverView();
-    if (r.name === 'map') return mapView();
+    if (r.name === 'map') return mapView(r);
     if (r.name === 'stats') return statsView();
     if (r.name === 'about') return aboutView();
     if (r.name === 'photo') return photoView(r);
     if (r.name === 'card') return cardView(r);
     if (r.name === 'trip') return tripView(r);
-    // 宽屏时书架常驻左侧，主列就不必再来一份
+    // 宽屏时书架常驻左侧，主列不必再来一份时间轴 —— 但扉页和示例开关放这儿更宽敞
     return wide()
       ? h('div', { class: 'view' }, [
+          noteOff() ? h('div', { class: 'shelf-head' }, [askBtn()]) : introCard(),
           h('div', { class: 'sec-label', text: '书架' }),
-          h('div', { class: 'empty', text: '左边挑一趟点进去。要记新的一趟，也在左边。' })
+          h('div', { class: 'empty', text: '左边挑一趟点进去。要记新的一趟，也在左边。' }),
+          sampleSwitch()
         ])
       : shelfView();
   }
@@ -800,7 +973,7 @@
     const rail = $('rail-shelf');
     if (rail) {
       rail.textContent = '';
-      if (r.name !== 'cover' && wide()) rail.appendChild(shelfView());
+      if (r.name !== 'cover' && wide()) rail.appendChild(shelfView(true));
     }
 
     // 照片大图和明信片都算「某一趟」的一层，tab 还是停在书架上
