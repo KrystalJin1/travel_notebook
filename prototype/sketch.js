@@ -1,17 +1,14 @@
-/* 手绘渲染引擎（rough.js）—— 从 hand-drawn.html 抽出来，index.html 和样张页共用。
+/* 手绘渲染引擎 —— 插画库（ART）+ 手绘 UI 描边。index.html 和样张页共用。
    对外只暴露 window.Sketch，不靠顶层 const 跨 <script> 共享（那样 vm 里的测试跑不通）。
-   参数已定稿，见 docs/需求文档.md §4.5。 */
-const NS = 'http://www.w3.org/2000/svg';
-const mk = n => document.createElementNS(NS, n);
+   参数已定稿，见 docs/需求文档.md §4.5。
 
-const C = {
-  ink:'#2f2c26', ink2:'#7d7566', ink3:'#b3a894',
-  blue:'#a9c6d6', lblue:'#cfe0e8', green:'#a3bd9a', red:'#e0917a',
-  yellow:'#f0cd7f', pink:'#e9bdb0', snow:'#f7f8f6', sand:'#e6dcc6', paper:'#fdfbf5'
-};
-
-/* 已定稿的手绘参数：手抖 1.2 / 弯曲 1.5 / 笔粗 0.8 */
-const S = { rough:1.2, bow:1.5, sw:0.8, color:true, hatch:false, pen:0 };
+   笔、颜料、rough 调用都在 draw.js 里（§6.1）：ART 解释器只跟 draw 说话，
+   这样明信片拼贴能复用同一批插图，小程序端换 canvas 后端时这里一行都不用改。 */
+const NS = Draw.NS;
+const mk = Draw.mk;
+const C = Draw.C;
+const S = Draw.S;
+const opts = Draw.opts;
 
 /* ---------- 插画库 ----------
    f  = 填色块（先画，会被压在墨线下面）
@@ -266,75 +263,38 @@ const ART = {
     {tx:'JPN', x:30, y:50, s:8}
   ]}
 };
-/* ---------- 通用绘制 ---------- */
-function opts(extra, seed, kScale){
-  const k = kScale || 1;
-  return Object.assign({
-    roughness: S.rough,
-    bowing: S.bow,
-    strokeWidth: S.sw * k,
-    stroke: C.ink,
-    seed: seed + S.pen * 977,
-    fill: undefined,
-    preserveVertices: false
-  }, extra);
+/* ---------- 通用绘制 ----------
+   一条 ART item → draw 后端的一次调用。这里不许出现 rough / setAttribute（§6.1）。
+     f  = 填色块   tx = 文字（手写体，不抖）   其余 = 墨线（w 笔粗倍数 / s 笔色 / dash）*/
+function shape(d, it, seed, k){
+  const st = { seed, k };
+  if (it.f) { st.fill = it.f; st.keep = it.keep; }
+  else if (it.tx) return d.text(it.tx, { x: it.x, y: it.y, size: it.s });
+  else {
+    if (it.s) st.stroke = it.s;
+    if (it.w) st.w = it.w;
+    if (it.dash) st.dash = it.dash;
+  }
+  return it.c ? d.circle(it.c[0], it.c[1], it.c[2], st) : d.path(it.d, st);
 }
 
-function shape(rc, it, seed, k){
-  // 填色块
-  if (it.f) {
-    if (!S.color && !it.keep) return null;
-    // 色块的抖动要比墨线小得多：rough.js 的 solid 填充是沿「抖过的轮廓」铺色，
-    // 用墨线那档参数会把细长矩形涂成一片叶子，看着像没画准而不是手绘。
-    const o = opts({
-      fill: it.f,
-      fillStyle: it.keep ? 'solid' : (S.hatch ? 'hachure' : 'solid'),
-      fillWeight: S.sw * k * .9,
-      hachureGap: 3.6,
-      hachureAngle: -41,
-      stroke: 'none',
-      roughness: S.rough * (S.hatch ? .8 : .45),
-      bowing: S.bow * .45
-    }, seed, k);
-    const n = it.c ? rc.circle(it.c[0], it.c[1], it.c[2] * 2, o) : rc.path(it.d, o);
-    // 色块故意错开一点，像蜡笔涂出格
-    if (!it.keep) n.setAttribute('transform', 'translate(.6,.8)');
-    return n;
-  }
-  // 文字（手写体，不抖）
-  if (it.tx) {
-    const t = mk('text');
-    t.setAttribute('x', it.x); t.setAttribute('y', it.y);
-    t.setAttribute('text-anchor', 'middle');
-    t.setAttribute('font-size', it.s);
-    t.setAttribute('fill', C.ink);
-    t.setAttribute('font-family', "MarkerGothic, sans-serif");
-    t.setAttribute('letter-spacing', '.5');
-    t.textContent = it.tx;
-    return t;
-  }
-  // 墨线。w = 笔粗倍数（细节线细一点），s = 换笔色（远景/纹理用淡墨）
-  const o = opts({ fill: 'none' }, seed, k);
-  if (it.s) o.stroke = it.s;
-  if (it.w) o.strokeWidth = S.sw * k * it.w;
-  if (it.dash) o.strokeLineDash = it.dash;
-  return it.c ? rc.circle(it.c[0], it.c[1], it.c[2] * 2, o) : rc.path(it.d, o);
+/* 把一张插图画进任意 draw 画布 —— 明信片拼贴复用的就是这个入口。
+   k 会一路乘进笔粗：外层 group 有 scale 时得反向补偿，否则放大的那张笔明显粗一圈。 */
+function artInto(d, name, seedBase, k){
+  const spec = ART[name];
+  if (!spec) return null;
+  spec.items.forEach((it, i) => shape(d, it, seedBase + i * 13, k));
+  return spec;
 }
 
 function drawArt(host){
-  const spec = ART[host.dataset.art];
-  if (!spec) { host.textContent = '?' + host.dataset.art; return; }
-  const svg = mk('svg');
-  svg.setAttribute('viewBox', `0 0 ${spec.w} ${spec.h}`);
-  svg.setAttribute('class', 'art');
-  const rc = rough.svg(svg);
-  const k = spec.k || 1;
-  spec.items.forEach((it, i) => {
-    const n = shape(rc, it, hash(host.dataset.art) + i * 13, k);
-    if (n) svg.appendChild(n);
-  });
+  const name = host.dataset.art;
+  const spec = ART[name];
+  if (!spec) { host.textContent = '?' + name; return; }
+  const d = Draw.svg({ w: spec.w, h: spec.h, cls: 'art' });
+  artInto(d, name, hash(name), spec.k || 1);
   while (host.firstChild) host.removeChild(host.firstChild);
-  host.appendChild(svg);
+  host.appendChild(d.node);
 }
 
 function hash(s){ let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 9973; return h; }
@@ -460,6 +420,6 @@ function bindPanel(){
 
 window.Sketch = {
   S, C, ART, mk, hash, opts,
-  drawArt, paintFrame, paintTape, paintArt, paintChrome, paintAll,
+  drawArt, artInto, paintFrame, paintTape, paintArt, paintChrome, paintAll,
   repaint, say, bindPanel
 };

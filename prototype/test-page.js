@@ -101,12 +101,21 @@ class El {
     return out;
   }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
+  // bake.js 导出前会先克隆一份再改 xmlns / 塞 <style>，不许动到屏幕上那棵树
+  cloneNode(deep) {
+    const c = new El(this.nodeName);
+    Object.assign(c.attrs, this.attrs);
+    c._text = this._text;
+    if (deep) for (const k of this.children) c.appendChild(k.cloneNode(true));
+    return c;
+  }
 }
 
 class TextNode {
   constructor(t) { this.nodeName = '#text'; this._text = String(t); this.children = []; this.attrs = Object.create(null); this.parentNode = null; }
   get textContent() { return this._text; }
   get tagName() { return undefined; }
+  cloneNode() { return new TextNode(this._text); }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
 }
 
@@ -209,7 +218,11 @@ function runPage(page, extra) {
     // 立刻执行：页面里的 setTimeout 都是「等排版好了再画一次」（地图的首帧就是），
     // 不跑的话地图这一层在断言里永远是空的
     setTimeout: fn => { if (typeof fn === 'function') fn(); return 0; },
-    clearTimeout() {}, addEventListener() {}
+    clearTimeout() {}, addEventListener() {},
+    // 导出那条链要的浏览器零件：base64 编解码 + 序列化器。
+    // 序列化直接接快照用的那个 ser()，导出的文本和快照就是同一份东西
+    atob: global.atob, btoa: global.btoa,
+    XMLSerializer: function () { this.serializeToString = ser; }
   }, extra || {}));
   ctx.window = ctx.self = ctx;      // rough.js / kernel.js / trip.js 都挂在 window 上
   for (const s of scriptsOf(page))
@@ -312,6 +325,12 @@ function fieldNamed(root, label) {
 }
 
 const labeled = (root, txt) => all(root).filter(n => n.textContent === txt)[0] || null;
+// 按钮：父容器的 textContent 常跟按钮一模一样，所以只认真的挂了 click 的那一个
+const tapped = (root, txt) =>
+  all(root).filter(n => n.textContent === txt && n._on && n._on.click)[0] || null;
+
+// 点了以后才知道结果的断言（导出走 Promise）攒在这里，main 等微任务跑完再验
+const later = [];
 
 function checkShell() {
   const env = shellEnv();
@@ -523,6 +542,72 @@ function checkShell() {
     // 翻页：每一号都得画得出来
     for (let i = 1; i < wall.length; i++) nav('#/trip/' + withPhoto.id + '/photo/' + i);
     ok(byClass(main, 'lb-fig').length === 1, '翻到最后一张大图空了');
+
+    /* 明信片页（§4.7）：详情页有入口、页面画得出那张纸、三个存盘按钮点了不许抛。
+       这个环境没有 canvas / Blob，所以「存不出来」是正确结果 ——
+       要验的是它把原因写在页面上，而不是静默什么都不发生。 */
+    nav('#/trip/' + withPhoto.id);
+    const toCard = tapped(main, '做张明信片 →');
+    if (ok(!!toCard, '详情页上没有明信片入口')) {
+      toCard._fire('click');
+      ok(env.location.hash === '#/trip/' + withPhoto.id + '/card',
+        '明信片入口没跳对：' + env.location.hash);
+    }
+    nav('#/trip/' + withPhoto.id + '/card');
+    const pc = byClass(main, 'pc')[0];
+    if (ok(!!pc && !!svgOf(pc), '明信片页没画出 SVG')) {
+      const svg = svgOf(pc);
+      ok(svg.getAttribute('viewBox') === '0 0 900 1200',
+        '明信片不是 900×1200：' + svg.getAttribute('viewBox'));
+      ok(all(svg).length > 200, '明信片几乎是空的：' + all(svg).length + ' 个节点');
+    }
+    ok(/压字 0　出界 0/.test(text()), '明信片页没把 §7.2 的指标摊出来：' + text().slice(-120));
+
+    // 拿住 echo 这个节点本身：后面还会 nav 去别的页，从 main 里再找就找不到了
+    const echo = byClass(main, 'echo')[0];
+    for (const label of ['存 SVG', '存 PNG', '存 PDF']) {
+      const b = tapped(main, label);
+      if (!ok(!!b, '明信片页少了「' + label + '」按钮')) continue;
+      b._fire('click');                        // 抛出来就整个测试挂掉，这本身就是断言
+      later.push(() => ok(/^存不出来：/.test(echo.textContent),
+        label + ' 应该报出失败原因，实际「' + echo.textContent + '」'));
+    }
+
+    /* 导出的文本：xml 头 + 命名空间 + 显式尺寸，缺一个栅格器就读不出图。
+       clone 一份再改，屏幕上那棵树不许被动过（不然按一次「存」页面就变了）。 */
+    const B = ctx.Bake;
+    const live = svgOf(byClass(main, 'pc')[0]);
+    const before = all(live).length;
+    const src = B.svgText(live);
+    ok(/^<\?xml/.test(src.text) && src.text.indexOf('xmlns="http://www.w3.org/2000/svg"') > 0,
+      '导出的 SVG 没有 xml 头 / 命名空间');
+    ok(src.w === 900 && src.h === 1200 && /width="900"/.test(src.text),
+      '导出的 SVG 尺寸不对：' + src.w + '×' + src.h);
+    ok(src.font === false, '读不到样式表时 font 该报 false，好让页面提示字体换了');
+    ok(src.text.length > 50000, '导出的 SVG 内容太少：' + src.text.length + ' 字');
+    ok(all(live).length === before, '导出把屏幕上那棵 SVG 改了');
+
+    /* PDF 骨架是手拼的，xref 里写的是字节偏移。JPEG 里必然有 >127 的字节，
+       一旦哪天改成按字符数算，这里的偏移就会指不到 obj 上 —— 所以逐条验回去。 */
+    const fake = { width: 200, height: 300,
+      toDataURL: () => 'data:image/jpeg;base64,'
+        + Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0xFF, 0xD9, 0x80, 0xC3]).toString('base64') };
+    const bytes = B.pdfBytes(fake, { w: 900, h: 1200 });
+    const raw = Buffer.from(bytes).toString('binary');
+    ok(/^%PDF-1\.4/.test(raw), 'PDF 头不对：' + raw.slice(0, 12));
+    ok(/%%EOF\n$/.test(raw), 'PDF 尾不对');
+    ok(raw.indexOf('/MediaBox[0 0 450 600]') > 0, '页面尺寸不是 450×600pt（SVG 单位的一半）');
+    ok(raw.indexOf('/Filter/DCTDecode') > 0, 'JPEG 没按 /DCTDecode 挂进去');
+    const startxref = +/startxref\n(\d+)/.exec(raw)[1];
+    ok(raw.slice(startxref, startxref + 4) === 'xref', 'startxref 指不到 xref 表');
+    const offs = raw.slice(startxref).match(/^(\d{10}) 00000 n $/gm) || [];
+    ok(offs.length === 5, 'xref 应该有 5 条记录，实际 ' + offs.length);
+    offs.forEach((line, i) => {
+      const at = +line.slice(0, 10);
+      ok(raw.slice(at, at + 8).indexOf((i + 1) + ' 0 obj') === 0,
+        '第 ' + (i + 1) + ' 个对象的偏移量指错了：' + JSON.stringify(raw.slice(at, at + 12)));
+    });
+    ok(B.safe('东京 · 明信片/2026') === '东京-·-明信片-2026', '文件名没清干净：' + B.safe('东京 · 明信片/2026'));
   }
 
   /* 案例页（M6）：讲技术不讲行程，而且它自己夸的「数字只有一处出处」得当真 ——
@@ -574,9 +659,81 @@ function checkShell() {
   }
 }
 
+/* ==================== 三点六、明信片版面（§4.4 / §7.2） ====================
+
+   四条硬指标逐趟验，不是抽一趟看看：排版引擎里「文字不被遮挡」是结构保证的
+   （抖动量按外接框反推、照片长出去先跟文字对一遍），所以这里一旦报出 textHits
+   就说明那条结构断了，而不是参数没调好。 */
+
+function checkPostcard() {
+  const { document, ctx } = runPage('index.html', shellEnv());
+  const { Postcard: PC, Layout: L, TripView: TV, Store: ST } = ctx;
+  if (!ok(!!PC && !!L, 'layout.js / postcard.js 没加载')) return;
+
+  const trips = ST.data.trips;
+  const cards = trips.map(t => PC.build(TV.derive(t, ST.ctx())));
+
+  // node test-page.js --pc 把四条指标摊出来，调版面参数时看这张表
+  if (process.argv.includes('--pc'))
+    cards.forEach((c, i) => console.log(
+      '  ' + (trips[i].title || trips[i].id).padEnd(16)
+      + ' 片 ' + String(c.audit.tiles).padStart(2)
+      + ' 照 ' + c.audit.photos
+      + ' 行 ' + c.layout.rows
+      + ' 压字 ' + c.audit.textHits
+      + ' 出界 ' + c.audit.outside
+      + ' 重叠 ' + (c.audit.overlap * 100).toFixed(1) + '%'
+      + ' 留白 ' + (c.audit.white * 100).toFixed(1) + '%'
+      + ' 节点 ' + all(c.node).length));
+
+  cards.forEach((c, i) => {
+    const a = c.audit, name = trips[i].title || trips[i].id;
+    ok(a.textHits === 0, name + '：文字被压住了 ' + a.textHits + ' 处（§4.4 规则 3 的硬约束）');
+    ok(a.outside === 0, name + '：有 ' + a.outside + ' 片掉出画布');
+    ok(a.white >= .15 && a.white <= .35,
+      name + '：留白 ' + (a.white * 100).toFixed(1) + '%，不在 15%~35% 内');
+    // 只有一张照片时没有「照片之间」，这条不成立
+    if (a.photos >= 2)
+      ok(a.overlap >= .05 && a.overlap <= .20,
+        name + '：照片重叠 ' + (a.overlap * 100).toFixed(1) + '%，不在 5%~20% 内');
+    ok(all(c.node).length > 60, name + '：明信片画出来几乎是空的（' + all(c.node).length + ' 个节点）');
+  });
+  ok(cards.some(c => c.audit.photos >= 2), '示例数据里应该有一趟能验出照片重叠');
+
+  // 每种贴片都得有人画：tiles() 声明了 kind，PAINT 里没有就会静默漏一块
+  const v0 = TV.derive(trips[0], ST.ctx());
+  const kinds = PC.tiles(v0).map(t => t.data.kind);
+  ok(kinds.indexOf('title') === 0 && kinds.indexOf('stats') > 0, '贴片清单少了标题 / 数字条');
+  ok(new Set(kinds).size >= 5, '贴片种类太少：' + [...new Set(kinds)].join('、'));
+
+  // 同数据 + 同 seed → 同一份 SVG（§4.4 规则 6）。导出和快照都靠这一条
+  ok(ser(PC.build(v0).node) === ser(cards[0].node), '同一趟画两次结果不一样 —— seed 没锁住');
+
+  // 换 seed 必须换版面，否则 jitter 根本没接上
+  const other = PC.build(v0, {});
+  ok(ser(other.node) === ser(cards[0].node), 'opt 为空时不该改变版面');
+  const v1 = Object.assign({}, v0, { trip: Object.assign({}, v0.trip, { seed: v0.trip.seed + 7 }) });
+  ok(ser(PC.build(v1).node) !== ser(cards[0].node), '换了 seed 版面却一模一样 —— 抖动没生效');
+
+  // 手动覆写（§4.4 规则 5）：写了 layout.pin 的片子引擎不许动
+  const pinned = { id: 'p/x', kind: 'photo', cols: 3, ratio: .74, pin: true,
+                   layout: { x: 40, y: 60, w: 200, h: 150, rot: 3, z: 999 }, data: {} };
+  const res = L.run([pinned, { id: 't', kind: 'text', cols: 6, ratio: .2, data: {} }], { seed: 5 });
+  const got = res.items.filter(t => t.id === 'p/x')[0];
+  ok(got && got.x === 40 && got.y === 60 && got.w === 200 && got.rot === 3,
+    'layout.pin 的坐标被引擎改掉了：' + JSON.stringify(got && { x: got.x, y: got.y, w: got.w }));
+
+  // 空数据不许崩：一趟什么都没记，也得出一张纸
+  const empty = PC.build(TV.derive({ id: 'e', title: '', status: 'planned', time: {}, entries: [] },
+    ST.ctx()));
+  ok(empty.node.children.length > 3, '空行程的明信片画不出来');  ok(empty.audit.textHits === 0, '空行程的明信片也不许压字');
+
+  return { document, cards };
+}
+
 /* ==================== 四、导 svg（--svg） ==================== */
 
-function dumpSvg(document) {
+function dumpSvg(document, pc) {
   const dir = '/tmp/art';
   fs.mkdirSync(dir, { recursive: true });
   let n = 0;
@@ -589,6 +746,10 @@ function dumpSvg(document) {
     fs.writeFileSync(path.join(dir, host.attrs['data-art'] + '.svg'), ser(svg) + '\n');
     n++;
   }
+  (pc && pc.cards || []).forEach((c, i) => {
+    fs.writeFileSync(path.join(dir, 'postcard-' + i + '.svg'), ser(c.node) + '\n');
+    n++;
+  });
   console.log('导出 ' + n + ' 张到 ' + dir + '（转 png：for f in ' + dir
     + '/*.svg; do cairosvg "$f" -o "${f%.svg}.png"; done）');
 }
@@ -603,10 +764,15 @@ const a = ser(doc.documentElement), b = ser(runPage('hand-drawn.html').document.
 ok(a === b, '两次渲染结果不一致 —— seed 没锁住');
 
 checkShell();
+const pc = checkPostcard();
 
-if (process.argv.includes('--svg')) dumpSvg(doc);
+if (process.argv.includes('--svg')) dumpSvg(doc, pc);
 
-console.log((nBad ? 'FAIL' : 'OK') + '  ' + nOk + ' 项通过'
-  + (nBad ? ' / ' + nBad + ' 项失败' : '')
-  + '  ·  ' + Math.round(a.length / 1024) + ' KB 输出  ·  ' + (Date.now() - t0) + ' ms');
-process.exit(nBad ? 1 : 0);
+// 导出是异步的（Image.onload / Promise），等微任务跑完再收尾
+Promise.resolve().then(() => {
+  later.forEach(f => f());
+  console.log((nBad ? 'FAIL' : 'OK') + '  ' + nOk + ' 项通过'
+    + (nBad ? ' / ' + nBad + ' 项失败' : '')
+    + '  ·  ' + Math.round(a.length / 1024) + ' KB 输出  ·  ' + (Date.now() - t0) + ' ms');
+  process.exit(nBad ? 1 : 0);
+});

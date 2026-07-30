@@ -5,7 +5,7 @@
 **一次旅行结束后，照片、票根、花了多少钱、去过哪几个城市，散在相册和备忘录里，过两年就全忘了。**
 **这个项目把它们拼成一页能看的东西 —— 而且是手画的。**
 
-🖊️ 纸 · 墨 · 胶带 · 邮戳　|　✈️ 手绘航线地图　|　📊 足迹总览　|　📝 能填数字的编辑器　|　🚫 没有框架，没有打包器
+🖊️ 纸 · 墨 · 胶带 · 邮戳　|　✈️ 手绘航线地图　|　📮 一键存成明信片　|　📊 足迹总览　|　🚫 没有框架，没有打包器
 
 </div>
 
@@ -27,7 +27,8 @@ prototype/index.standalone.html       # 1.2MB，一个文件就是完整的手�
 
 > 💡 `.standalone.html` 是构建产物，**没有进仓库**（一份 1MB+），跑一下上面那条命令就有。
 
-落地流程：封面 → 点「翻开 →」进书架 → 点任意一趟进详情 → 右上角「编辑 ✎」开始填数字。
+落地流程：封面 → 点「翻开 →」进书架 → 点任意一趟进详情 → 右上角「编辑 ✎」开始填数字 →
+底下「做张明信片 →」把这一趟拼成一张纸，存 PNG / PDF / SVG。
 底部 tab 还有 🗺️ 地图、📊 足迹、📄 关于三个并列入口。
 
 | 想干什么 | 打开哪个 |
@@ -51,6 +52,7 @@ prototype/index.standalone.html       # 1.2MB，一个文件就是完整的手�
 - **地图画的是你自己填的航线**：每一段弧都对应一条真填的航段，已飞是实线 + 端点实心，计划是虚线 + 空心；坐标查不到的段**不画也不猜**，把名单列出来让你补。摊平 / 地球两种投影，地球可拖着转。
 - **交互按 app 做，不是 PPT**：手帐只是视觉隐喻。导航是**栈**不是幻灯片，后退键 / `Esc` / 右滑都回**来处**；内容可自由滚动，不为了「一屏装下」被裁；返回时还原滚动位置。3D 翻页只留给封面 → 书架那一次仪式。
 - **能填数字**：详情页的编辑表单能改标题、日期、状态、预算、航段、花销（支持外币，自动折算）、想去的地方、随手写的笔记。填完卡片、书架、地图、足迹总览上的数字立刻一起变。
+- **📮 明信片是导出的单位**：详情页竖着自由滚，没有「一页」可言，也就没法发出去。所以 `#/trip/:id/card` 是另一层 —— 900×1200 的固定画布，照片、数字条、航段、手写块全由排版引擎摆，胶带贴在照片真压出来的缝上。存 **SVG**（无损、能再编辑、不需要 canvas）、**PNG**（发微信 / 贴简历）、**PDF**（打印，450×600pt / 约 288dpi）。三种格式**没引一个第三方库**，PDF 骨架是手拼的。
 
 ---
 
@@ -75,6 +77,7 @@ prototype/index.standalone.html       # 1.2MB，一个文件就是完整的手�
 # build-fonts.py —— 给两支中文字体做子集
 SOURCES = ["index.html", "hand-drawn.html", "map.html",
            "app.js", "store.js", "trip.js", "kernel.js", "sketch.js", "map.js",
+           "postcard.js", "bake.js",
            "data/trips.json", "data/places.json"]     # 文案散在 js 里，必须一起扫
 
 ASCII       = "".join(chr(c) for c in range(0x20, 0x7F))
@@ -89,7 +92,7 @@ TRIPS = "data/trips.json"            # 只取 trips[].title，整个 json 塞进
 EXTRA = "旅行手帐新的一趟未命名"     # 封面书名不在 trips.json 里，得手工补
 ```
 
-产物：`handtype.js` 里 **557 个字形轮廓**（186KB），`fonts/inline.css` 里两支字体 base64 内联（586KB）。
+产物：`handtype.js` 里 **558 个字形轮廓**（188KB），`fonts/inline.css` 里两支字体 base64 内联（593KB）。
 字库里没有轮廓的字**自动退回普通文字渲染**，所以加新文案不会缺字，只是那几个字不抖。
 手绘标题同时把原文留在 `data-hand-raw` 里 —— 选中、朗读、Ctrl+F 搜索都还拿得到文字。
 
@@ -101,7 +104,7 @@ EXTRA = "旅行手帐新的一趟未命名"     # 封面书名不在 trips.json 
 页面上的 `#/about` 就是这一节的可运行版本 —— 上面每个数字都是打开那一页时现算的。
 
 1. **🖊️ 手绘渲染管线**　fontTools 抽轮廓 → rough.js 描边。同一支笔画地图海岸线、插图、卡片框、标题，风格自洽；换一支笔（reseed）全页笔迹一起换。
-2. **🎲 确定性渲染**　手绘要「看着随机」但必须「每次一样」，否则没法导出也没法测。`seed` 存在数据里，`seedOf(base, key)` 派生子种子，随机数走 mulberry32 → 同数据同 seed 得到**逐字节相同的 SVG**。测试里就是渲染两遍比对序列化结果。
+2. **🎲 确定性排版引擎**　拼贴要「看着随机」但必须「每次一样」，否则没法导出也没法测。`seed` 存在数据里，`seedOf(base, key)` 派生子种子，随机数走 mulberry32 → 同数据同 seed 得到**逐字节相同的 SVG**。四条硬指标（压字 0 / 出界 0 / 照片重叠 5~20% / 留白 15~35%）每次跑测试都算一遍；其中「文字不被遮挡」是**结构保证** —— 照片只在自己那几行里互相挤，文字块单独占行，而不是排完了再挪。
 3. **📥 录入 provider 抽象 + 评测集**（M5）　录入是这类产品真正的门槛。`manual` / `text` / `exif` 三个 provider 同一个接口，产出带 `confidence`，一律进「待确认」区；并且有标注好的评测集算字段级 F1，改规则后 F1 不许降。
 
 外加一条贯穿全项目的规矩：**每个数字只有一处出处**。卡片和书架读 `derive()`，地图读 `atlas()`，
@@ -119,16 +122,20 @@ prototype/
   index.html                手帐本本体
   data/trips.json           唯一数据源：11 趟 / 175 条 entry / 14 种货币汇率
   data/places.json          城市与机场坐标（33 条），查不到就列出来提示，不猜
-  app.js        (827 行)    hash 路由 + 封面 / 书架 / 详情 / 编辑 / 地图 / 足迹 / 案例页
+  app.js        (885 行)    hash 路由 + 封面 / 书架 / 详情 / 编辑 / 明信片 / 地图 / 足迹 / 案例页
   store.js      (147 行)    bundle 之上叠 localStorage 改动 + exportJSON
   trip.js       (436 行)    旅行皮肤 + 状态机 + derive / atlas / summary
   kernel.js     (119 行)    内核：时间、汇率、汇总、seed —— 不认识「旅行」两个字
-  sketch.js     (465 行)    手绘渲染引擎 + ART 插图库
+  draw.js       (214 行)    渲染后端：笔、颜料、所有 rough 调用都关在这里
+  sketch.js     (425 行)    手绘渲染引擎 + ART 插图库
+  layout.js     (295 行)    确定性拼贴排版引擎 + audit 四条指标（纯几何，不碰 DOM）
+  postcard.js   (237 行)    把 derive() 的数字拆成贴片，画成 900×1200 的明信片
+  bake.js       (214 行)    存 SVG / PNG / PDF（PDF 骨架手拼，不引第三方库）
   map.js        (337 行)    d3-geo 投影 + 手绘海岸线 + 航线弧（只画，不认识「旅行」）
   paper.css / app.css       纸面与卡片 / 页面外壳
   hand-drawn.html           风格样张页（贴纸墙、调参对比）
   map.html                  地图样张页（国界 / 简化两个滑块）
-  test-page.js  (612 行)    stub DOM 跑真页面，119 条断言
+  test-page.js  (778 行)    stub DOM 跑真页面，206 条断言
   build*.py                 字体子集 / 字形轮廓 / 数据打包 / 单文件导出
 ```
 
@@ -140,15 +147,20 @@ prototype/
 cd prototype
 python3 build.py            # fonts → handtype → data → pages
 python3 build.py data pages # 只改了 data/*.json 时
-node test-page.js           # 119 条断言，两页都跑（--svg 顺便导 /tmp/art/*.svg）
+node test-page.js           # 206 条断言，两页都跑（--svg 导 /tmp/art/*.svg，--pc 打明信片审计表）
 ```
 
 测试不开浏览器：手写一个 stub DOM，用 `vm` 依次执行页面里的每个 `script`，然后**真的去点、真的去填** ——
 填一个预算就断言仓库和卡片上的数字都跟着变；只改日期不碰状态框，就断言卡片换了版式、
 书架上冒出「旅行中 · NOW」这一栏；点照片墙第二张就断言开到了 `#/trip/x/photo/1`。
 
+导出这条链也一样咬住：stub DOM 里**没有** `canvas` / `Image` / `Blob`，所以三个「存」按钮
+必须都落在「存不出来：<原因>」上 —— **导不出来就说导不出来**是被测试保护的契约，不是注释里的愿望。
+手拼的 PDF 另外单测：`xref` 里写的是**字节**偏移，假 JPEG 特意塞了 `0x80` / `0xC3`，
+哪天有人把偏移改成按字符数算，五条偏移就指不到 obj 头上。
+
 ```
-OK 119 项通过 · 594 KB 输出 · 1.4 s
+OK 206 项通过 · 594 KB 输出 · 2.0 s
 ```
 
 ---
@@ -158,13 +170,19 @@ OK 119 项通过 · 594 KB 输出 · 1.4 s
 ```
 kernel.js   时间 / 汇率 / 汇总 / seed        ← 不认识「旅行」，换皮肤不用改
 trip.js     leg·place·spend·stay·note       ← 只决定「算什么、放哪个盒子」，不吐一行 SVG
-sketch.js   data-frame / data-art → SVG     ← 换 canvas 后端时只改这一层
+layout.js   贴片 → {x,y,w,h,rot,z}          ← 纯几何，不碰 DOM、不认识「照片」以外的语义
+draw.js     path / circle / group           ← 唯一碰 rough.js 的地方，换 canvas 后端只改它
+sketch.js   data-frame / data-art → SVG     ← 走 draw，自己不调 rc.*
+postcard.js derive() 的数字 → 一张纸        ← 走 layout + draw
+bake.js     SVG → SVG / PNG / PDF           ← 只管存盘，不认识「旅行」
 map.js      投影 + 海岸线 + 航线弧          ← 只画，航线由 atlas() 算好传进来
 app.js      路由 + 页面                     ← 只管把 hash 变成一页
 ```
 
 规矩：**SVG 调用不许漏进插图库和排版引擎**。`rough.generator()` 只吐 `move` / `lineTo` / `bcurveTo` + 裸数字，
-同 seed 两端笔迹一致 —— 所以小程序端只是再写一个 canvas 2d 后端（M7），前两层白拿。
+同 seed 两端笔迹一致 —— 所以小程序端只是再写一个 canvas 2d 后端（M7），前几层白拿。
+`draw.js` 就是这层门，验收方式很直接：**抽完这一层，渲染结果字节不变**。
+（`map.js` 还在直接调 `rc.*`，是最后一个耦合点，留给真要做 canvas 后端的时候。）
 
 ---
 
@@ -176,7 +194,7 @@ app.js      路由 + 页面                     ← 只管把 hash 变成一页
 | M1 | 内核数据模型 + 真实 JSON 驱动整页，删掉硬编码 | ✅ |
 | M2 | 手帐本外壳：封面 → 书架 → 详情 → 编辑，栈式路由，导出 JSON | ✅ |
 | M3 | 地图接真实航段、照片大图、足迹总览、状态机自动推进 | ✅ |
-| M4 | 拼贴排版引擎 + PNG/PDF 导出 + 排版快照测试 | |
+| M4 | 拼贴排版引擎 + 明信片 + PNG/PDF/SVG 导出 + 排版快照测试 | ✅ |
 | M5 | 录入 provider（manual / text / exif）+ 解析评测集 | |
 | M6 | 打磨 + README + 案例页 `#/about` | 🚧 进行中 |
 | M7 | 小程序端：canvas 2d 渲染后端，复用同一内核 | |

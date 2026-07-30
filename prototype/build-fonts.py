@@ -35,6 +35,7 @@ LATIN_EXTRA = "①②③④⑤⑥⑦⑧⑨⑩ºªµ×÷±"
 # 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、test-page.js（只在终端里）。
 SOURCES = ["index.html", "hand-drawn.html", "map.html",
            "app.js", "store.js", "trip.js", "kernel.js", "sketch.js", "map.js",
+           "postcard.js", "bake.js",
            "data/trips.json", "data/places.json"]
 
 

@@ -173,6 +173,15 @@ body.at-photo{overflow:hidden}
 .tabs a.on::after{content:'';display:block;width:20px;height:0;margin:3px auto 0;
   border-bottom:1.5px solid var(--ink)}
 
+/* ---------- 明信片页：一张固定比例的纸 + 三个存盘按钮（§4.7） ----------
+   SVG 自带 900×1200 的 width/height，这里按容器宽度等比缩回去，
+   窄屏上不横向溢出、宽屏上也不糊 —— 矢量图放大不掉像素。 */
+.pc{margin-bottom:12px;line-height:0}
+.pc svg{display:block;width:100%;height:auto;box-shadow:0 1px 0 #e2d8c2,0 8px 22px rgba(60,50,30,.09)}
+.pc-acts{margin-bottom:2px}
+.pc-audit{display:none}
+body.debug .pc-audit{display:block}
+
 /* ---------- 调参条：默认藏起来，按 d 或 #debug 唤出 ---------- */
 .ctl{display:none}
 body.debug .ctl{display:flex}

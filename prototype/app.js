@@ -52,6 +52,7 @@
     if (p[0] === 'about') return { name: 'about' };
     if (p[0] === 'trip' && p[1]) {
       if (p[2] === 'photo' && p[3] != null) return { name: 'photo', id: p[1], n: +p[3] || 0 };
+      if (p[2] === 'card') return { name: 'card', id: p[1] };
       return { name: 'trip', id: p[1], edit: p[2] === 'edit' };
     }
     return { name: 'cover' };
@@ -201,7 +202,62 @@
     drawCard();
     drawEditor();
 
-    return h('div', { class: 'view detail' }, [bar, cardHost, moneyHost, editHost]);
+    // 明信片是另一层，不是这一页的一段：详情页竖着滚多长都行，明信片是固定的一张纸（§4.7）
+    const toCard = r.edit ? null : h('div', { class: 'seg pc-acts' }, [
+      tappable(h('span', { class: 'mini', 'data-frame': 'rect',
+        'data-seed': K.seedOf(t.seed, 'pcbtn'), text: '做张明信片 →' }),
+        () => go('#/trip/' + t.id + '/card'))
+    ]);
+
+    return h('div', { class: 'view detail' }, [bar, cardHost, toCard, moneyHost, editHost]);
+  }
+
+  /* ================= 五点五、明信片（§4.4 / §4.7） =================
+
+     详情页是一条竖着滚的流，没有「一页」可言，所以也没法发给别人。
+     明信片才是那张纸：版面由 layout.js 算，画由 postcard.js 出，存盘归 bake.js。
+     这一层只负责路由、三个按钮，和把 audit 的四个数摊给调试条。 */
+
+  function cardView(r) {
+    const t = ST.trip(r.id);
+    if (!t) return h('div', { class: 'view detail' }, [
+      topbar('找不到这一趟'),
+      h('div', { class: 'empty', text: '这趟旅行不在本机数据里。可能是清过缓存。' })
+    ]);
+    if (!root.Postcard || !root.Bake) return h('div', { class: 'view detail' }, [
+      topbar(named(t)),
+      h('div', { class: 'empty', text: 'postcard.js / bake.js 没加载 —— 明信片画不出来。' })
+    ]);
+
+    const card = root.Postcard.build(T.derive(t, ST.ctx()));
+    const name = named(t) + ' 明信片';
+    const echo = h('div', { class: 'echo', text: '存 SVG 不需要 canvas，任何环境都存得出来。' });
+
+    // 每个按钮都可能失败（file:// 下读不到字体、无头环境没有 canvas），失败就把原因写在下面
+    const btn = (label, fn) => tappable(h('span', { class: 'mini', text: label }), () => {
+      echo.textContent = label + '…';
+      let job;
+      try { job = fn(); } catch (e) { job = Promise.reject(e); }
+      Promise.resolve(job).then(res => {
+        echo.textContent = '已存 ' + res.name + '（' + Math.max(1, Math.round(res.size / 1024)) + ' KB）'
+          + (res.font === false ? '　字体没内联进去，图上的正文换了一支字：从 http 打开就正常。' : '');
+      }, e => { echo.textContent = '存不出来：' + e.message; });
+    });
+
+    const B = root.Bake, a = card.audit;
+    return h('div', { class: 'view detail' }, [
+      topbar(named(t) + ' · 明信片', '回详情 ↩', () => go('#/trip/' + t.id)),
+      h('div', { class: 'pc' }, [card.node]),
+      h('div', { class: 'seg pc-acts' }, [
+        btn('存 PNG', () => B.png(card.node, name)),
+        btn('存 PDF', () => B.pdf(card.node, name)),
+        btn('存 SVG', () => B.svg(card.node, name))
+      ]),
+      echo,
+      h('div', { class: 'echo pc-audit', text: '§7.2　压字 ' + a.textHits + '　出界 ' + a.outside
+        + '　照片重叠 ' + (a.overlap * 100).toFixed(1) + '%　留白 ' + (a.white * 100).toFixed(1) + '%'
+        + '　贴片 ' + a.tiles + ' 片 / ' + card.layout.rows + ' 行　seed ' + card.layout.seed })
+    ]);
   }
 
   /* ================= 六、表单控件 ================= */
@@ -716,6 +772,7 @@
     if (r.name === 'stats') return statsView();
     if (r.name === 'about') return aboutView();
     if (r.name === 'photo') return photoView(r);
+    if (r.name === 'card') return cardView(r);
     if (r.name === 'trip') return tripView(r);
     // 宽屏时书架常驻左侧，主列就不必再来一份
     return wide()
@@ -746,8 +803,9 @@
       if (r.name !== 'cover' && wide()) rail.appendChild(shelfView());
     }
 
-    // 照片大图算「某一趟」的一层，tab 还是停在书架上
-    const on = (r.name === 'trip' || r.name === 'photo') ? '#/shelf' : '#/' + r.name;
+    // 照片大图和明信片都算「某一趟」的一层，tab 还是停在书架上
+    const on = (r.name === 'trip' || r.name === 'photo' || r.name === 'card')
+      ? '#/shelf' : '#/' + r.name;
     for (const a of Array.prototype.slice.call($('tabs').getElementsByTagName('a')))
       a.classList.toggle('on', a.getAttribute('href') === on);
 
