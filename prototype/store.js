@@ -11,7 +11,7 @@
   const KEY = 'travel-notebook/v1';
   const clone = o => JSON.parse(JSON.stringify(o));
 
-  let base = null, data = null;
+  let base = null, data = null, seen = '';
   const listeners = [];
 
   /* ---------- 读写 ---------- */
@@ -22,21 +22,34 @@
     try { saved = localStorage.getItem(KEY); } catch (e) { /* 隐私模式下会抛 */ }
     data = clone(base);
     data.myPlaces = {};
+    seen = base.stamp || '';
     if (saved) {
       const s = JSON.parse(saved);
       if (s.trips) data.trips = s.trips;
       if (s.rates) data.rates = s.rates;
       if (s.myPlaces) data.myPlaces = s.myPlaces;
+      // 存过的那一份是照着哪版出厂数据存的。老版本没这一项，当成「不知道」——
+      // 不知道就当过期，宁可多问一次，也别让人对着半年前的书架以为这就是全部
+      seen = s.stamp || '';
     }
     return data;
   }
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify({
-        trips: data.trips, rates: data.rates, myPlaces: data.myPlaces
+        stamp: seen, trips: data.trips, rates: data.rates, myPlaces: data.myPlaces
       }));
     } catch (e) { console.warn('存不下来（localStorage 不可用）：', e.message); }
   }
+
+  /* 出厂数据换了版，而这台机器上存着旧的一份 —— 书架上说一句（§4.8）。
+     为什么要说：load() 里存过的 trips 会盖掉出厂那份，所以来过一次的人
+     以后再打开永远是老数据，新加的行程、换的图他一辈子看不到，而页面上
+     不会有任何迹象。这不是 bug 是设计（本机改动优先），但得让人知道。
+     不自动覆盖：那一份可能是人家自己记的东西。 */
+  const stale = () => dirty() && !!base.stamp && seen !== base.stamp;
+  // 「不用了」：记下现在这一版，下次不再问。数据一字不改，只是把话咽回去
+  const keepMine = () => { seen = base.stamp || ''; save(); emit(); };
 
   const dirty = () => {
     try { return !!localStorage.getItem(KEY); } catch (e) { return false; }
@@ -46,6 +59,7 @@
     try { localStorage.removeItem(KEY); } catch (e) { /* 同上 */ }
     data = clone(base);
     data.myPlaces = {};
+    seen = base.stamp || '';
     emit();
   }
 
@@ -190,7 +204,7 @@
   };
 
   root.Store = {
-    load, save, reset, dirty, on, change, today, blank,
+    load, save, reset, dirty, stale, keepMine, on, change, today, blank,
     get data() { return data; },
     trip, entry, view, ordered, ctx, currencies,
     places, isMine, setPlace, dropPlace,

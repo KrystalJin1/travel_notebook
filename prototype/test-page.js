@@ -294,10 +294,10 @@ function check() {
     '有标题没渲染成字形');
 
   // 折算出来的数字（不是硬编码）—— 改了 data/trips.json 这里就该跟着改
-  for (const s of ['东京', '京都', '6 天', '3 个城市', '3 张照片', '8,640', '3,552',
+  for (const s of ['东京', '纽约 · 库斯科', '6 天', '3 个城市', '3 张照片', '8,640', '3,552',
                    'SHA → HND', 'MU523', '筑地场外市场',
-                   '想去清单 7 个 · 已定位 5 个', '已订 2 晚，剩 1 晚待定',
-                   '日程 2 / 4 天已排'])
+                   '想去清单 5 个 · 已定位 4 个', '已订 6 晚，剩 8 晚待定',
+                   '日程 3 / 15 天已排'])
     ok(text.indexOf(s) >= 0, '页面上找不到「' + s + '」');
   ok(/距出发还有 \d+ 天/.test(text), '待出行卡片没有倒计时');
   ok(text.indexOf('这趟最喜欢的半小时') >= 0 && byClass(body, 'note')[0].children
@@ -373,6 +373,11 @@ function checkShell() {
         ok(img.nodeName === 'img' && /^data:image\//.test(img.attrs.src || ''),
           '封面那张位图该内联成 data: URI，实际 ' + String(img.attrs.src).slice(0, 40));
       }
+      /* 出厂那四趟得让位图一进来就露脸（§4.8 空状态）：封面这张相纸取的是
+         「最近一趟已旅行的第一张图」，所以那一趟必须带 img:。改 data/trips.json
+         时把带位图的那趟挪走或往前塞一趟纯手绘的，一进来就又只剩矢量插画了 ——
+         页面上看不出哪里不对，只会觉得「怎么跟截图不一样」。 */
+      ok(/^img:/.test(want || ''), '出厂数据里封面那张该是位图（img:），实际 ' + want);
     }
 
     const cvn = byClass(cover, 'cvn').map(n => n.textContent);
@@ -460,12 +465,70 @@ function checkShell() {
   App.render();
   ok(ST.data.trips.length === nBase, '恢复出厂四趟失败');
 
+  /* 出厂数据换了版，本机还存着旧的一份：书架顶上得说一句（§4.8）。
+     不说的话，来过一次的人以后打开永远是老数据 —— 新加的行程、换的图一辈子看不到，
+     页面上还一点迹象都没有（「刷新了怎么没差别」就是这么来的）。
+     两个出口都得在：取新的（丢掉本机改动）/ 留着我的（记下这一版，不再问）。 */
+  {
+    const KEY = 'travel-notebook/v1';
+    ok(!!ctx.DATA.stamp, 'bundle 里少了出厂数据的指纹（build-data.py 的 stamp）');
+    nav('#/shelf');
+    ok(text().indexOf('出厂那几趟更新了') < 0, '刚存过就说过期 —— 指纹没跟着存进 localStorage');
+
+    // 假装这一份是上一版出厂数据存下来的
+    const doctor = () => {
+      const raw = JSON.parse(env.localStorage.getItem(KEY));
+      raw.stamp = 'old000000000';
+      env.localStorage.setItem(KEY, JSON.stringify(raw));
+      ST.load(ctx.DATA);
+      nav('#/shelf');
+    };
+    doctor();
+    ok(ST.stale(), '指纹对不上，Store.stale() 该是 true');
+    ok(text().indexOf('出厂那几趟更新了') >= 0, '出厂数据换了版，书架上没说一句');
+    const keepMine = tapped(main, '不用了 · 留着我的');
+    if (ok(!!keepMine, '缺「不用了 · 留着我的」这个出口')) {
+      keepMine._fire('click');
+      ok(!ST.stale(), '点了「不用了」还在报过期');
+      ok(text().indexOf('出厂那几趟更新了') < 0, '点了「不用了」，那张卡还挂着');
+      nav('#/shelf');
+      ok(text().indexOf('出厂那几趟更新了') < 0, '「不用了」没记住 —— 换一页回来又问一遍');
+    }
+    // 取新的：本机那一份整个丢掉，回到出厂
+    doctor();
+    ST.change(d => { d.trips = d.trips.slice(0, 1); });   // 先弄成跟出厂不一样
+    nav('#/shelf');
+    const takeNew = tapped(main, '取新的 · 丢掉本机改动');
+    if (ok(!!takeNew, '缺「取新的」这个出口')) {
+      takeNew._fire('click');
+      ok(ST.data.trips.length === nBase,
+        '「取新的」没换回出厂那 ' + nBase + ' 趟，实际 ' + ST.data.trips.length);
+      ok(!ST.dirty() && !ST.stale(), '「取新的」之后本机那一份该清掉了');
+    }
+  }
+
   const plan = ST.data.trips.filter(t =>
     TV.statusOf(t, ST.ctx().now) === 'planned')[0];
   nav('#/trip/' + plan.id);
   ok(byClass(main, 'card').length === 1, '详情页应该只画这一趟');
   ok(text().indexOf(plan.title) >= 0, '详情页没显示标题：' + plan.title);
   ok(!main.getElementsByTagName('input').length, '没点「编辑」就不该出现输入框');
+
+  /* 待出行也上照片墙（§4.2「想去的样子」）：参考图不是回忆，所以整排淡一档。
+     张数必须等于 wallPhotos() 那一份 —— 卡片自己再挑一遍，点开看大图的序号就错位了。 */
+  {
+    const wall = TV.wallPhotos(TV.derive(plan, ST.ctx()));
+    if (ok(wall.length >= 1, '待出行那趟该有照片，否则验不了「想去的样子」')) {
+      const wish = byClass(main, 'wish')[0];
+      if (ok(!!wish, '待出行卡片少了「想去的样子」那一排')) {
+        ok(text().indexOf('想去的样子') >= 0, '「想去的样子」那行小字没写出来');
+        ok(byClass(wish, 'ph').length === wall.length,
+          '想去的样子 ' + byClass(wish, 'ph').length + ' 张 ≠ wallPhotos ' + wall.length + ' 张');
+        ok(byClass(wish, 'photos')[0].classList.contains('plan'),
+          '待出行的照片墙该淡一档（.photos.plan）');
+      }
+    }
+  }
 
   nav('#/trip/' + plan.id + '/edit');
   ok(byClass(main, 'editor').length === 1, '编辑页应该有表单');
@@ -498,6 +561,59 @@ function checkShell() {
         '卡片上的已支出没跟着变，应该是 ' + TV.fmtMoney(v.paid));
     }
   }
+
+  /* 照片那一栏（§4.8）：图片能在页面上换，不用去改 JSON。
+     三种写法都得填得进去 —— art: / img: 从下拉里挑，自己的图贴地址（§3.1）。 */
+  const photoEs = () => ST.trip(plan.id).entries.filter(e => e.type === 'photo');
+  const path0 = photoEs()[0] && photoEs()[0].media[0].path;
+  const pick = fieldNamed(main, '换成');
+  if (ok(!!pick, '编辑器少了「照片」那一栏：找不到「换成」下拉')) {
+    const opts = pick.children.map(o => o.attrs.value);
+    ok(opts.some(o => /^art:/.test(o)) && opts.some(o => /^img:/.test(o)),
+      '「换成」得把矢量插画和位图都列出来，实际 ' + opts.length + ' 项：' + opts.slice(0, 3));
+    const one = opts.filter(o => /^art:/.test(o))[0];
+    pick.value = one;
+    pick._fire('change');
+    ok(photoEs()[0].media[0].path === one,
+      '换图没写回 media[0].path：' + photoEs()[0].media[0].path);
+    ok(all(main).some(n => n.attrs['data-art'] === one.slice(4)),
+      '换完图，页面上没换成 ' + one);
+
+    // 贴一个查不到的位图名字：明说缺哪张，不退回随便一张插画（§3.2 一律不猜）
+    const addr = fieldNamed(main, '贴地址');
+    if (ok(!!addr, '照片那一栏少了「贴地址」')) {
+      addr.value = 'img:根本没这张';
+      addr._fire('change');
+      ok(text().indexOf('缺图 根本没这张') >= 0, '查不到的位图名字该写「缺图 xxx」');
+      ok(byClass(main, 'danger').some(n => n.textContent.indexOf('缺图') >= 0),
+        '缺图那一行该给一句红字说清怎么补');
+    }
+  }
+
+  /* 加一张 / 换顺序：顺序就是上墙顺序（第一张还兼当封面相纸），
+     所以「上移」必须真的换 entries 里的位置，不是只换页面上的样子。 */
+  const nPhoto = () => photoEs().length;
+  const ids = () => photoEs().map(e => e.id);
+  const wasN = nPhoto(), ids0 = ids();
+  const addPhoto = labeled(main, '＋ 加一张');
+  if (ok(!!addPhoto, '找不到「＋ 加一张」')) {
+    addPhoto._fire('click');
+    ok(nPhoto() === wasN + 1, '加一张没加上：' + wasN + ' → ' + nPhoto());
+    const was = ids();
+    const up = labeled(main, '↑ 上移');
+    if (ok(!!up, '不止一张的时候该能「上移」')) {
+      up._fire('click');
+      ok(ids()[0] === was[1] && ids()[1] === was[0],
+        '上移没换顺序：' + was.join(',') + ' → ' + ids().join(','));
+    }
+    // 后面的断言跑在出厂那一份上，所以把这一张和换掉的图收回去
+    ST.removeEntry(plan.id, ids().filter(id => ids0.indexOf(id) < 0)[0]);
+  }
+  if (path0) ST.patchEntry(plan.id, photoEs()[0].id, e => {
+    e.media[0].path = path0;
+    e.media[0].kind = /^art:/.test(path0) ? 'drawing' : 'image';
+  });
+  App.render();
 
   /* 状态机（§3.2）：planned → ongoing → done 按日期自己走，锁住的不动 */
   const pastTime = { start: '2020-01-01', end: '2020-01-05' };

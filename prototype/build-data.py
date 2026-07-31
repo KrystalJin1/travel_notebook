@@ -7,7 +7,7 @@
 
 用法：python3 build-data.py
 输入：data/trips.json  data/places.json  data/samples.json  media/*.jpg
-输出：data/bundle.js   ->  window.DATA = {baseCurrency, rates, places, trips, samples, images}
+输出：data/bundle.js   ->  window.DATA = {baseCurrency, rates, stamp, places, trips, samples, images}
 
 samples 是「点了才叠进来」的那几趟（§4.8 空状态）：默认书架只有 trips 里的 2+2，
 示例跟着 bundle 一起发但不进 Store，所以离线单文件里也点得动，不用再发一次请求。
@@ -19,6 +19,7 @@ none」却裂图）；而明信片存 PNG/PDF 是把 SVG 塞进 <img>，那时�
 外部文件一律读不到。代价是 bundle 胖 ~1MB，单文件从 1.2MB 涨到约 2.3MB。
 """
 import base64
+import hashlib
 import json
 import pathlib
 
@@ -45,6 +46,17 @@ def images():
     return out
 
 
+def stamp(trips, samples):
+    """出厂数据的指纹：trips + samples 的内容哈希。
+
+    为什么不用构建时间：那样每次跑一遍构建、内容一个字没改，回头客都会被问一次
+    「出厂数据更新了，取新的吗」—— 问多了就没人看了。内容哈希才只在数据真的
+    变了的时候变。也不把 places / images 算进来：那两样改了不影响「书架上是哪几趟」。
+    """
+    body = json.dumps([trips, samples], ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(body.encode("utf-8")).hexdigest()[:12]
+
+
 def main():
     trips = strip(json.loads((DATA / "trips.json").read_text(encoding="utf-8")))
     places = strip(json.loads((DATA / "places.json").read_text(encoding="utf-8")))
@@ -55,6 +67,7 @@ def main():
     bundle = {
         "baseCurrency": trips.get("baseCurrency", "CNY"),
         "rates": trips.get("rates", {"CNY": 1}),
+        "stamp": stamp(trips.get("trips", []), samples.get("trips", [])),
         "places": places,
         "trips": trips.get("trips", []),
         "samples": samples.get("trips", []),
@@ -74,7 +87,8 @@ def main():
           f"{len(bundle['trips'])} 个行程 / {n_entries} 条 entry / "
           f"{len(places)} 个地点 / "
           f"示例 {len(bundle['samples'])} 趟 {n_sample} 条 / "
-          f"位图 {len(imgs)} 张 {n_img} bytes")
+          f"位图 {len(imgs)} 张 {n_img} bytes / "
+          f"指纹 {bundle['stamp']}")
 
 
 if __name__ == "__main__":

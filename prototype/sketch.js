@@ -706,8 +706,18 @@ function bindPanel(){
   });
 }
 
+/* 哪几张 ART 能当「一张照片」用 —— 编辑器的图片下拉要列它们，所以写明白。
+   剩下的是弧线、图标、贴纸，尺寸和用途都不一样，不该出现在照片那一栏。
+   靠尺寸（150×105）去猜的话，哪天加一张异形场景图就会悄悄漏掉。 */
+const SCENES = [
+  ['fuji', '河口湖'], ['torii', '浅草鸟居'], ['street', '新宿街头'],
+  ['stair', '蒙马特台阶'], ['river', '泰晤士夜色'], ['alley', '北村小巷'],
+  ['lantern', '九份阶梯'], ['canal', '运河摊子'], ['snow', '小樽雪河'],
+  ['terrace', '梯田'], ['shophouse', '牛车水店屋']
+];
+
 window.Sketch = {
-  S, C, ART, mk, hash, opts,
+  S, C, ART, SCENES, mk, hash, opts,
   drawArt, artInto, paintFrame, paintTape, paintArt, paintChrome, paintAll,
   repaint, say, bindPanel
 };

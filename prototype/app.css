@@ -142,6 +142,10 @@ body{padding:0;min-height:100dvh}
 /* 查不到坐标的码：一个码一行，行首把码本身立起来当标题 */
 .fix .code{flex:none;align-self:center;font-family:var(--display);font-size:14.5px;
   letter-spacing:.06em;color:var(--ink);padding:0 2px}
+/* 照片那一栏行首的小样：换完图当场看见换成了什么（§4.8 100ms 内要有反馈） */
+.thumb{flex:none;width:76px;align-self:center;background:#fff;padding:3px;
+  box-shadow:0 1px 3px rgba(60,50,35,.18)}
+.thumb .art-gone{font-size:9px;border-width:1px}
 /* 默认文案一律走 placeholder，不写进 value —— 否则用户点开先得删字 */
 .f input::placeholder,.f textarea::placeholder{color:#bcae95;font-family:var(--hand)}
 /* 「填完了」的出口。顶栏那个「完成 ✓」太小，新建完一趟找不着，这里再给一个大的 */

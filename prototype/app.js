@@ -198,6 +198,32 @@
     ]);
   }
 
+  /* 出厂数据换了版，而这台机器上存着旧的一份（Store.stale()）—— 书架顶上说一句。
+     为什么非说不可：来过一次就会往 localStorage 存一份，从那以后打开永远是那一份，
+     新加的行程、换的图一辈子看不到，而页面上没有任何迹象 —— 会以为「刷新了没差别」。
+     不自动覆盖：存着的那份可能是人家自己记的东西。所以给两个出口，都是一下点完。 */
+  function staleCard() {
+    if (!ST.stale()) return null;
+    const btn = (label, seed, fn) => tappable(
+      h('div', { class: 'mini', 'data-frame': 'rect', 'data-seed': seed, text: label }), fn);
+    return h('div', { class: 'intro', 'data-frame': 'rect', 'data-seed': 31 }, [
+      h('div', { class: 'intro-title', text: '出厂那几趟更新了' }),
+      h('div', { class: 'intro-line' }, [
+        h('b', { text: '为什么' }),
+        h('span', { text: '你之前在这台机器上改过，书架读的就一直是本机那一份 —— '
+          + '所以新的示例行程和插画都还没进来。' })
+      ]),
+      h('div', { class: 'switch' }, [
+        btn('取新的 · 丢掉本机改动', 32, () => {
+          if (confirm('用新的出厂数据覆盖本机这一份？你在这台机器上改过的都会没了。')) {
+            ST.reset(); render();
+          }
+        }),
+        btn('不用了 · 留着我的', 33, () => { ST.keepMine(); render(); })
+      ])
+    ]);
+  }
+
   /* 书架上一行 = 一趟。这里故意不给每个数字套手绘框：一屏十几个抖动的小方框
      会把版面搅花，手绘留给外框那一个，数字排成一行小字（§4.8 规整优先）。 */
   function strip(t) {
@@ -243,6 +269,7 @@
     });
 
     return h('div', { class: 'view shelf' }, [
+      plain ? null : staleCard(),
       plain ? null : (noteOff() ? h('div', { class: 'shelf-head' }, [askBtn()]) : introCard()),
       ...group('旅行中 · NOW', pick(s => s === 'ongoing'), null),
       ...group('已旅行 · PAST', pick(s => s === 'done'), '还没有记完的旅行。'),
@@ -567,6 +594,64 @@
       mini('＋ 加一个', () => grow('place'))
     ];
 
+    /* --- 照片：三种写法都能填（§3.1）---
+       下拉列的是这本子里现成有的图：11 张矢量插画（art:）+ 构建时内联进 bundle 的
+       位图（img:）。自己的图走「贴地址」那一栏 —— http 地址和 data:image/… 都认。
+       只在这里改 media[0].path，怎么画仍然是 Kernel.mediaRef() 一处说了算。
+       顺序就是上墙顺序（前 5 张上墙、第一张还兼当封面相纸），所以给一个「上移」。 */
+    const mediaOpts = [].concat(
+      (root.Sketch.SCENES || []).map(p => ['art:' + p[0], '插画 · ' + p[1]]),
+      Object.keys(ST.data.images || {}).sort().map(k => ['img:' + k, '位图 · ' + k])
+    );
+    const known = p => mediaOpts.some(o => o[0] === p);
+
+    function photoRow(e, i, all) {
+      const m = (e.media && e.media[0]) || {};
+      const p = m.path || '';
+      const put = x => peAll(e, ee => {
+        if (!(ee.media || []).length) ee.media = [{ id: ee.id + '-m', w: 150, h: 105 }];
+        ee.media[0].path = x;
+        ee.media[0].kind = /^art:/.test(x) ? 'drawing' : 'image';
+      });
+      const ref = K.mediaRef(p, ST.data.images);
+      const lost = ref.art && !root.Sketch.ART[ref.art];
+      const okDraw = !!p && !ref.missing && !lost;
+      const why = !p ? '还没选图，这一张不上墙。'
+        : ref.missing ? '缺图「' + ref.missing + '」：bundle 里没有这个名字，'
+            + '把 jpg 放进 prototype/media/ 再 python3 build.py data，或者换成下面的地址。'
+        : lost ? '插画库里没有「' + ref.art + '」这张。'
+        : '画得出来。';
+      return h('div', { class: 'fix' }, [
+        row([
+          h('div', { class: 'thumb' }, [T.mediaNode(v, m, e.title)]),
+          txt('说明', e.title, x => pe(e, ee => { ee.title = x; }), null, '这张是什么'),
+          sel('换成', known(p) ? p : '', [['', '（用下面的地址）']].concat(mediaOpts),
+            x => { if (x) put(x); }, 'wide'),
+          txt('贴地址', known(p) ? '' : p, x => put(x.trim()), 'wide',
+            'https://… 或 data:image/jpeg;base64,…'),
+          i > 0 ? mini('↑ 上移', () => swap(e, all[i - 1])) : null,
+          del(() => cut(e))
+        ]),
+        h('div', { class: 'echo' + (okDraw ? '' : ' danger'), text: why })
+      ]);
+    }
+    // 换顺序就是换 entries 里的位置：上墙顺序、封面挑第一张，都读的是这个数组
+    const swap = (a, b) => {
+      ST.patchTrip(t.id, tr => {
+        const i = tr.entries.indexOf(a), j = tr.entries.indexOf(b);
+        if (i < 0 || j < 0) return;
+        tr.entries[i] = b; tr.entries[j] = a;
+      });
+      redraw.all();
+    };
+    const photos = [
+      h('h3', { text: '照片' }),
+      h('div', { class: 'tip', text: '前 5 张上照片墙，第一张还兼当封面那张相纸。'
+        + '待出行的这一栏是「想去的样子」，一样会显示。' }),
+      ...(() => { const all = ofType('photo'); return all.map((e, i) => photoRow(e, i, all)); })(),
+      mini('＋ 加一张', () => grow('photo'))
+    ];
+
     /* --- 随手写 --- */
     const n0 = ofType('note')[0];
     const ta = h('textarea', { text: n0 ? (n0.body || '') : '',
@@ -616,7 +701,7 @@
     ];
 
     return h('div', { class: 'editor' },
-      [].concat(basic, legs, spends, spots, notes, done, footer));
+      [].concat(basic, legs, spends, spots, photos, notes, done, footer));
   }
 
   /* ================= 八、地图 ================= */
@@ -944,6 +1029,7 @@
     // 宽屏时书架常驻左侧，主列不必再来一份时间轴 —— 但扉页和示例开关放这儿更宽敞
     return wide()
       ? h('div', { class: 'view' }, [
+          staleCard(),
           noteOff() ? h('div', { class: 'shelf-head' }, [askBtn()]) : introCard(),
           h('div', { class: 'sec-label', text: '书架' }),
           h('div', { class: 'empty', text: '左边挑一趟点进去。要记新的一趟，也在左边。' }),

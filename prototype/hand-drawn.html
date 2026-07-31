@@ -70,11 +70,15 @@
 /* 这一页是风格样张（§4.8）：手帐本本体在 index.html。
    这里只把卡片渲染出来看笔迹，调参条留着自己看。 */
 
-// 样张只画「最近一趟已旅行 + 下一趟待出行」两张，仓库里加到几十趟也不影响这页
+// 样张只画两张：已旅行 / 待出行各挑「条目最多」的那一趟。这一页是给人看笔迹的 ——
+// 挑「最近那趟」的话，正好摊上条目最少的一趟就把照片墙、逐日行程折叠这些元素摆不出来。
+// 数字仍然是 derive() 现算的，这里只决定画谁；仓库里加到几十趟也不影响这页。
 function sampleOf(data){
+  const most = list => list.slice().sort((a, b) =>
+    (b.entries || []).length - (a.entries || []).length)[0];
   const ordered = TripView.order(data.trips || []);
-  const pick = [ordered.filter(t => t.status !== 'planned')[0],
-                ordered.filter(t => t.status === 'planned')[0]].filter(Boolean);
+  const pick = [most(ordered.filter(t => t.status !== 'planned')),
+                most(ordered.filter(t => t.status === 'planned'))].filter(Boolean);
   return Object.assign({}, data, { trips: pick });
 }
 

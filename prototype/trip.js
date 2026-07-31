@@ -204,6 +204,19 @@
     }));
   }
 
+  /* 待出行也上照片墙（§4.2）：那是「想去的样子」—— 参考图、别人拍的、上次去拍的，
+     不是回忆，所以整排淡一档（`.photos.plan`），跟标题同一个道理。
+     不另写一套版式，就是同一个 photoWall —— 序号也还是 wallPhotos() 那份，
+     所以点开看大图跟已旅行走的是同一条路。 */
+  function wishWall(v, sd) {
+    const wall = photoWall(v, sd);
+    if (!wall) return null;
+    wall.classList.add('plan');
+    return h('div', { class: 'wish' }, [
+      h('div', { class: 'wish-cap', text: '想去的样子' }), wall
+    ]);
+  }
+
   // 逐日行程：超过 5 天折起来（§4.1）
   function dayList(v) {
     if (!v.itinerary.length) return null;
@@ -327,6 +340,7 @@
             text: '距出发还有 ' + cd + ' 天' })
         : null,
       routeStrip(v),
+      wishWall(v, sd),
       ...rows,
       h('div', { class: 'plan-item' }, [
         art('ico-wallet', 'ico'),
