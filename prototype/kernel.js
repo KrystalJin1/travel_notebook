@@ -74,6 +74,22 @@
     });
   }
 
+  /* ---------- 媒体 ---------- */
+  // 一条 media 该怎么画，只在这里判一次（§3.1）：
+  //   art:fuji  -> 内置矢量插画，交给 sketch.js 的 ART 库
+  //   img:kyoto -> 位图场景插画，查 bundle 里内联的 data: URI
+  //   其它       -> 当成图片地址直接用
+  // 查不到的 img: 返回 {missing}，页面不画也不猜 —— 跟 §3.2 坐标查不到同一条规矩。
+  function mediaRef(path, images) {
+    const p = String(path || '');
+    if (/^art:/.test(p)) return { art: p.slice(4) };
+    if (/^img:/.test(p)) {
+      const key = p.slice(4), src = (images || {})[key];
+      return src ? { src, key } : { missing: key };
+    }
+    return p ? { src: p } : {};
+  }
+
   /* ---------- 确定性随机 ---------- */
   // 字符串 -> 稳定小整数。同一个 id 永远拿到同一个 seed，所以笔迹不会因为重排而变
   function hash(s) {
@@ -114,6 +130,7 @@
   root.Kernel = {
     DAY, parseTime, midnight, spanDays, dayIndex, daysUntil,
     byType, allMedia, sumBy, distinct, groupBy, sorted,
+    mediaRef,
     hash, seedOf, rng, convert, round
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -67,6 +67,11 @@ body{
 .ph:nth-child(3){transform:rotate(-.6deg)}
 .ph .cap{font-size:11.5px;color:var(--ink2);position:absolute;bottom:4px;left:0;right:0;text-align:center;z-index:2}
 svg.art{display:block;width:100%;height:auto}
+/* 位图场景插画（img:）：跟矢量插画占同一个位置，锁 10:7 免得图到货时纸面抖一下 */
+img.art{display:block;width:100%;height:auto;aspect-ratio:10/7;object-fit:cover}
+/* img: 查不到名字：明说缺哪张，不随便换一张顶上（§3.2 一律不猜） */
+.art-gone{aspect-ratio:10/7;display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:var(--ink2);border:1px dashed var(--ink2);opacity:.7}
 
 /* ---------- 手写笔记 ---------- */
 .note{font-size:16px;line-height:32px;color:#453f34;padding-top:3px}

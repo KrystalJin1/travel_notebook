@@ -3,7 +3,7 @@
 # 字体子集的中间文件。inline.css 里已经把它们内联成 base64 了，两份没必要都进库
 prototype/fonts/_sub-*.woff2
 
-# 单文件导出，一份 800KB+。要发给别人时现跑 python3 build.py pages
+# 单文件导出，一份 2MB+（位图插画内联进去之后）。要发给别人时现跑 python3 build.py pages
 prototype/*.standalone.html
 
 # ---- 选型剩下的东西 ----
@@ -12,7 +12,9 @@ prototype/*.standalone.html
 prototype/fonts/candidates/
 
 # 构图参考位图：只用来照着改写成 SVG path，不进产物也不进库。
-# refs/ours/ 是从 sketch.js 现导的，跑 refs/export.sh 随时能重来
+# refs/ours/ 是从 sketch.js 现导的，跑 refs/export.sh 随时能重来。
+# 注意 prototype/media/*.jpg 不在这一类里 —— 那 8 张是 img: 那类媒体的正式素材，
+# 页面真的要拿它们渲染（构建时内联进 bundle.js），所以进库。
 refs/
 
 # ---- 杂物 ----

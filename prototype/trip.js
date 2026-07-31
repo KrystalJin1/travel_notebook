@@ -117,6 +117,8 @@
     return {
       trip, entries: es, legs, spends, spendTotal, byCat, itinerary, wishlist, stays,
       days, media, base,
+      // 位图插画表跟着 view 走：trip.js 在 store.js 之前加载，拿不到 Store（§6.1）
+      images: ctx.images || {},
       status, statusLabel: STATUS_LABEL[status],
       statusLocked: status === 'cancelled' || !!(trip.data && trip.data.lockStatus),
       // 旅行中的那趟：今天是第几天（卡片副标题用）
@@ -166,6 +168,17 @@
   }
 
   const art = (name, cls) => h('div', { class: cls || 'art', 'data-art': name, 'aria-hidden': 'true' });
+
+  /* 一条 media 画成一个节点。判「这是矢量还是位图」只在 Kernel.mediaRef() 里判一次，
+     照片墙、封面相纸、大图、明信片四处都走这儿 —— 加一类媒体不用改四个地方。
+     img: 查不到就写「缺图 xxx」，不退回随便一张插画：那是猜（§3.2）。 */
+  function mediaNode(v, m, alt) {
+    const r = K.mediaRef(m && m.path, v && v.images);
+    if (r.src) return h('img', { class: 'art', src: r.src, alt: alt || '' });
+    if (r.missing) return h('div', { class: 'art art-gone', text: '缺图 ' + r.missing });
+    return art(r.art || 'fuji');
+  }
+
   const stat = (n, label) => h('div', null, [
     h('div', { class: 'stat-n', text: n }), h('div', { class: 'stat-l', text: label })
   ]);
@@ -183,9 +196,7 @@
     if (list.length < 1) return null;
     return h('div', { class: 'photos' }, list.map((e, i) => {
       const m = e.media[0], day = e.data && e.data.day;
-      const inner = /^art:/.test(m.path)
-        ? art(m.path.slice(4))
-        : h('img', { class: 'art', src: m.path, alt: e.title || '' });
+      const inner = mediaNode(v, m, e.title);
       const cap = [e.place && e.place.name || e.title, day ? 'D' + day : null]
         .filter(Boolean).join(' · ');
       return h('div', { class: 'ph', 'data-frame': 'rect', 'data-seed': sd('ph' + e.id),
@@ -422,6 +433,7 @@
     if (!host) throw new Error('挂载点不存在');
     const ctx = {
       places: (data.places || {}), rates: data.rates || { CNY: 1 },
+      images: data.images || {},
       baseCurrency: data.baseCurrency || 'CNY', now: (opts && opts.now) || new Date()
     };
     host.textContent = '';
@@ -436,5 +448,5 @@
   }
 
   root.TripView = { derive, atlas, summary, mount, order, greatCircle, lookup,
-    fmtDate, fmtMoney, wallPhotos, statusOf, isPlan, STATUS_LABEL, CAT_ORDER };
+    fmtDate, fmtMoney, wallPhotos, mediaNode, statusOf, isPlan, STATUS_LABEL, CAT_ORDER };
 })(typeof window !== 'undefined' ? window : globalThis);

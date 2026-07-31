@@ -101,17 +101,21 @@
         .filter(Boolean).join(' · ');
       sheet(g, t, sd, C.snow);
       const box = { x: 8, y: 8, w: t.w - 16, h: t.h - 34 };
-      if (/^art:/.test(m.path)) {
-        const spec = root.Sketch.ART[m.path.slice(4)];
+      const ref = K.mediaRef(m.path, v.images);
+      if (ref.art) {
+        const spec = root.Sketch.ART[ref.art];
         if (spec) {
           // 等比放进框里（contain，不裁），scale 会把笔粗一起放大，所以 k 要除回去
           const s = Math.min(box.w / spec.w, box.h / spec.h);
           const x = box.x + (box.w - spec.w * s) / 2, y = box.y + (box.h - spec.h * s) / 2;
           g.group(`translate(${fx(x)} ${fx(y)}) scale(${fx(s)})`,
-            gg => root.Sketch.artInto(gg, m.path.slice(4), root.Sketch.hash(m.path.slice(4)), (spec.k || 1) / s));
+            gg => root.Sketch.artInto(gg, ref.art, root.Sketch.hash(ref.art), (spec.k || 1) / s));
         }
-      } else if (m.path) {
-        g.image(m.path, box.x, box.y, box.w, box.h);
+      } else if (ref.src) {
+        // 位图一定是 data: URI（build-data.py 内联过），所以存 PNG/PDF 时读得到
+        g.image(ref.src, box.x, box.y, box.w, box.h);
+      } else if (ref.missing) {
+        txt(g, '缺图 ' + ref.missing, box.x + 4, box.y + 18, 13, C.ink3);
       }
       g.line(box.x, box.y + box.h + 6, box.x + box.w, box.y + box.h + 6,
         { stroke: C.ink3, w: .7, seed: sd('cap/' + t.id) });

@@ -101,6 +101,8 @@
     places: places(),
     rates: data.rates || { CNY: 1 },
     baseCurrency: data.baseCurrency || 'CNY',
+    // 位图场景插画表（img:xxx -> data: URI），构建时内联进 bundle，只读
+    images: data.images || {},
     now: new Date()
   });
 

@@ -363,9 +363,15 @@ function checkShell() {
       // 封面那张图取最近一趟真填的第一张，不是挑一张写死在代码里
       const first = s.views.map(v => TV.wallPhotos(v)[0]).filter(Boolean)[0];
       const want = first && first.media[0] && first.media[0].path;
-      if (img && want && /^art:/.test(want)) {
+      if (img && /^art:/.test(want || '')) {
         ok(img.attrs['data-art'] === want.slice(4),
           '封面该用最近一趟的第一张图 ' + want + '，实际 ' + img.attrs['data-art']);
+      }
+      // 位图那类（img:kyoto）：贴的必须是 bundle 里内联好的 data: URI，
+      // 留成 media/kyoto.jpg 这种相对路径的话单文件导出就裂图（build-data.py 开头那段）
+      if (img && /^img:/.test(want || '')) {
+        ok(img.nodeName === 'img' && /^data:image\//.test(img.attrs.src || ''),
+          '封面那张位图该内联成 data: URI，实际 ' + String(img.attrs.src).slice(0, 40));
       }
     }
 
@@ -431,6 +437,26 @@ function checkShell() {
   }
   // 后面的断言跑在出厂那四趟上（发出去的就是这一份），所以放回去
   ST.change(d => { d.trips = keep; });
+
+  /* 每条 media 都得解析得出来：art: 要在 ART 库里，img: 要在 bundle 内联的位图表里。
+     漏一个在浏览器上就是一个空框，而 build-data.py 只管把 media/*.jpg 扫进来，
+     名字对不上它不会报错 —— 所以在这儿咬住（出厂 4 趟 + 示例 10 趟一起查）。 */
+  {
+    const K2 = ctx.Kernel, imgs = ST.data.images || {};
+    const paths = K2.distinct(ST.data.trips.concat(ST.samples())
+      .reduce((a, t) => a.concat(K2.allMedia(t.entries || [])), [])
+      .map(m => m.path));
+    ok(paths.some(p => /^img:/.test(p)), '数据里一条 img: 都没有 —— 位图插画没接上');
+    const gone = paths.filter(p => {
+      const r = K2.mediaRef(p, imgs);
+      return r.missing || (r.art && !ctx.Sketch.ART[r.art]);
+    });
+    ok(!gone.length, '这些 media 路径解析不出来：' + gone.join('、'));
+    // img: 必须是内联的 data: URI，留相对路径的话单文件导出会照旧报「外部依赖 none」却裂图
+    const raw = paths.filter(p => /^img:/.test(p)
+      && !/^data:image\//.test(K2.mediaRef(p, imgs).src || ''));
+    ok(!raw.length, 'img: 没内联成 data: URI：' + raw.join('、'));
+  }
   App.render();
   ok(ST.data.trips.length === nBase, '恢复出厂四趟失败');
 

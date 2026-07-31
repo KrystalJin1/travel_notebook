@@ -82,14 +82,11 @@
 
     /* 封面那张相纸：直接拿最近一趟真填的第一张照片（T.order 已经把最近的排在前面），
        所以换一趟数据封面就换一张图，不是挑一张好看的写死在这。
-       art: 开头的是内置手绘插画，其余按图片路径贴 —— 跟卡片上的照片墙是同一套规则。 */
+       art: / img: / 图片路径这三种怎么画，交给 T.mediaNode —— 跟照片墙同一套规则。 */
     const shot = () => {
-      const e = s.views.map(v => T.wallPhotos(v)[0]).filter(Boolean)[0];
-      const m = e && e.media[0];
-      const inner = m && !/^art:/.test(m.path)
-        ? h('img', { class: 'art', src: m.path, alt: e.title || '' })
-        : h('div', { class: 'art', 'aria-hidden': 'true',
-            'data-art': m ? m.path.slice(4) : 'fuji' });
+      const hit = s.views.map(v => ({ v: v, e: T.wallPhotos(v)[0] })).filter(x => x.e)[0];
+      const e = hit && hit.e, m = e && e.media[0];
+      const inner = T.mediaNode(hit && hit.v, m, e && e.title);
       return h('div', { class: 'shot' }, [
         h('div', { class: 'tape', style: 'top:-13px;left:50%;margin-left:-56px;'
           + 'transform:rotate(-2.5deg)', 'data-tape': '#e9bdb0', 'data-seed': 31 }),
@@ -735,7 +732,8 @@
 
   function photoView(r) {
     const t = ST.trip(r.id);
-    const list = t ? wallOf(t) : [];
+    const v = t ? ST.view(r.id) : null;
+    const list = v ? T.wallPhotos(v) : [];
     if (!list.length) return h('div', { class: 'view' }, [
       topbar('看照片'),
       h('div', { class: 'empty', text: '这一趟还没有照片。' })
@@ -743,9 +741,7 @@
 
     const n = ((r.n % list.length) + list.length) % list.length;
     const e = list[n], m = e.media[0];
-    const inner = /^art:/.test(m.path)
-      ? h('div', { class: 'art', 'data-art': m.path.slice(4), 'aria-hidden': 'true' })
-      : h('img', { class: 'art', src: m.path, alt: e.title || '' });
+    const inner = T.mediaNode(v, m, e.title);
 
     const cap = [e.place && e.place.name || e.title, e.data && e.data.day ? 'D' + e.data.day : null]
       .filter(Boolean).join(' · ');
