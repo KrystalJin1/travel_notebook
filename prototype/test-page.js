@@ -563,23 +563,36 @@ function checkShell() {
   }
 
   /* 照片那一栏（§4.8）：图片能在页面上换，不用去改 JSON。
-     三种写法都得填得进去 —— art: / img: 从下拉里挑，自己的图贴地址（§3.1）。 */
+     选图是**看图选** —— 点行内那张缩略图，摊开这本子里现成的图，点中哪张换哪张。
+     文字下拉列 `art:fuji` 这种内部名字，等于让人靠猜（用户反馈：「照片咋都不能选」）。
+     自己的图仍然走「贴地址」，三种写法都得填得进去（§3.1）。 */
   const photoEs = () => ST.trip(plan.id).entries.filter(e => e.type === 'photo');
   const path0 = photoEs()[0] && photoEs()[0].media[0].path;
-  const pick = fieldNamed(main, '换成');
-  if (ok(!!pick, '编辑器少了「照片」那一栏：找不到「换成」下拉')) {
-    const opts = pick.children.map(o => o.attrs.value);
-    ok(opts.some(o => /^art:/.test(o)) && opts.some(o => /^img:/.test(o)),
-      '「换成」得把矢量插画和位图都列出来，实际 ' + opts.length + ' 项：' + opts.slice(0, 3));
-    const one = opts.filter(o => /^art:/.test(o))[0];
-    pick.value = one;
-    pick._fire('change');
-    ok(photoEs()[0].media[0].path === one,
-      '换图没写回 media[0].path：' + photoEs()[0].media[0].path);
-    ok(all(main).some(n => n.attrs['data-art'] === one.slice(4)),
-      '换完图，页面上没换成 ' + one);
+  const nOpt = (ctx.Sketch.SCENES || []).length + Object.keys(ST.data.images || {}).length;
+  const cells = () => byClass(main, 'pick-i');
+  ok(!byClass(main, 'pick').length, '没点缩略图就不该摊开选图墙（一趟三张就是几十个缩略图）');
+  const thumb = byClass(main, 'thumb')[0];
+  if (ok(!!thumb, '编辑器少了「照片」那一栏：找不到行内那张缩略图')) {
+    thumb._fire('click');
+    ok(cells().length === nOpt,
+      '选图墙该把 ' + nOpt + ' 张现成的图都摊出来，实际 ' + cells().length + ' 格');
+    const arts = cells().filter(c => all(c).some(n => n.attrs['data-art']));
+    const imgs = cells().filter(c => all(c).some(n => /^data:image\//.test(n.attrs.src || '')));
+    ok(arts.length && imgs.length,
+      '选图墙得矢量插画和位图都画出来（不是只列名字）：矢量 ' + arts.length + ' / 位图 ' + imgs.length);
+    ok(cells().filter(c => c.classList.contains('on')).length <= 1, '当前那张最多只该高亮一格');
+
+    // 点一格就换：写回 media[0].path，页面当场换，墙自己收起（选完就不该挡着）
+    const one = all(arts[0]).filter(n => n.attrs['data-art'])[0].attrs['data-art'];
+    ok(!!(arts[0]._on && arts[0]._on.click), '选图墙那几格得真能点');
+    arts[0]._fire('click');
+    ok(photoEs()[0].media[0].path === 'art:' + one,
+      '点选图墙没写回 media[0].path：' + photoEs()[0].media[0].path);
+    ok(all(main).some(n => n.attrs['data-art'] === one), '换完图，页面上没换成 ' + one);
+    ok(!byClass(main, 'pick').length, '选完一张，选图墙该自己收起来');
 
     // 贴一个查不到的位图名字：明说缺哪张，不退回随便一张插画（§3.2 一律不猜）
+    byClass(main, 'thumb')[0]._fire('click');
     const addr = fieldNamed(main, '贴地址');
     if (ok(!!addr, '照片那一栏少了「贴地址」')) {
       addr.value = 'img:根本没这张';

@@ -474,6 +474,12 @@
     }
   }
 
+  /* 选图墙摊开在哪一条 photo 上（null = 都收起）。为什么放在 editor() 外面：
+     换一张图会 redraw.all() 重画整个编辑器，状态存在闭包里的话选完一张墙就自己合上了，
+     而人通常要连着挑两三张。同时只摊开一个 —— 一趟三张照片、每张一墙就是 57 个
+     缩略图，每个都要 rough.js 描一遍。 */
+  let openPick = null;
+
   function editor(t, redraw) {
     const v = T.derive(t, ST.ctx());
     const ofType = ty => (t.entries || []).filter(e => e.type === ty);
@@ -594,16 +600,31 @@
       mini('＋ 加一个', () => grow('place'))
     ];
 
-    /* --- 照片：三种写法都能填（§3.1）---
-       下拉列的是这本子里现成有的图：11 张矢量插画（art:）+ 构建时内联进 bundle 的
-       位图（img:）。自己的图走「贴地址」那一栏 —— http 地址和 data:image/… 都认。
+  /* --- 照片：三种写法都能填（§3.1）---
+       选图是**看图选**，不是从下拉里认名字：点行内那张缩略图，下面摊开这本子里
+       现成的图（11 张矢量插画 art: + 构建时内联进 bundle 的位图 img:），点中哪张就换哪张。
+       为什么不做成常开的一排：一趟三张照片就是 57 个缩略图，每张都要 rough.js 描一遍，
+       又慢又花。所以同时只摊开一张的（openPick 记的是哪条 entry）。
+       自己的图走「贴地址」那一栏 —— http 地址和 data:image/… 都认。
        只在这里改 media[0].path，怎么画仍然是 Kernel.mediaRef() 一处说了算。
        顺序就是上墙顺序（前 5 张上墙、第一张还兼当封面相纸），所以给一个「上移」。 */
     const mediaOpts = [].concat(
-      (root.Sketch.SCENES || []).map(p => ['art:' + p[0], '插画 · ' + p[1]]),
-      Object.keys(ST.data.images || {}).sort().map(k => ['img:' + k, '位图 · ' + k])
+      (root.Sketch.SCENES || []).map(p => ['art:' + p[0], p[1]]),
+      Object.keys(ST.data.images || {}).sort().map(k => ['img:' + k, k])
     );
     const known = p => mediaOpts.some(o => o[0] === p);
+
+    // 选图墙：每格就是这张图本身，走 T.mediaNode() —— 跟照片墙同一个渲染入口，
+    // 所以格子里看到的就是选完之后卡片上的样子，不是另画一套预览图
+    function pickWall(e, cur, put) {
+      return h('div', { class: 'pick' }, mediaOpts.map(o => {
+        const cell = h('div', { class: 'pick-i' + (o[0] === cur ? ' on' : '') }, [
+          T.mediaNode(v, { path: o[0], w: 150, h: 105 }, o[1]),
+          h('span', { class: 'pick-t', text: o[1] })
+        ]);
+        return tappable(cell, () => { openPick = null; put(o[0]); });
+      }));
+    }
 
     function photoRow(e, i, all) {
       const m = (e.media && e.media[0]) || {};
@@ -616,22 +637,25 @@
       const ref = K.mediaRef(p, ST.data.images);
       const lost = ref.art && !root.Sketch.ART[ref.art];
       const okDraw = !!p && !ref.missing && !lost;
-      const why = !p ? '还没选图，这一张不上墙。'
+      const open = openPick === e.id;
+      const why = !p ? '还没选图，先按默认那张画。点上面那张缩略图挑一张。'
         : ref.missing ? '缺图「' + ref.missing + '」：bundle 里没有这个名字，'
             + '把 jpg 放进 prototype/media/ 再 python3 build.py data，或者换成下面的地址。'
         : lost ? '插画库里没有「' + ref.art + '」这张。'
         : '画得出来。';
       return h('div', { class: 'fix' }, [
         row([
-          h('div', { class: 'thumb' }, [T.mediaNode(v, m, e.title)]),
+          tappable(h('div', { class: 'thumb' + (open ? ' on' : ''), title: '点一下换图' },
+            [T.mediaNode(v, m, e.title)]),
+            () => { openPick = open ? null : e.id; redraw.all(); }),
           txt('说明', e.title, x => pe(e, ee => { ee.title = x; }), null, '这张是什么'),
-          sel('换成', known(p) ? p : '', [['', '（用下面的地址）']].concat(mediaOpts),
-            x => { if (x) put(x); }, 'wide'),
-          txt('贴地址', known(p) ? '' : p, x => put(x.trim()), 'wide',
-            'https://… 或 data:image/jpeg;base64,…'),
+          mini(open ? '收起 ×' : '换图 ⇄', () => { openPick = open ? null : e.id; redraw.all(); }),
           i > 0 ? mini('↑ 上移', () => swap(e, all[i - 1])) : null,
           del(() => cut(e))
         ]),
+        open ? pickWall(e, known(p) ? p : '', put) : null,
+        open ? row([txt('贴地址', known(p) ? '' : p, x => put(x.trim()), 'wide',
+          '自己的图：https://… 或 data:image/jpeg;base64,…')]) : null,
         h('div', { class: 'echo' + (okDraw ? '' : ' danger'), text: why })
       ]);
     }
@@ -646,10 +670,15 @@
     };
     const photos = [
       h('h3', { text: '照片' }),
-      h('div', { class: 'tip', text: '前 5 张上照片墙，第一张还兼当封面那张相纸。'
+      h('div', { class: 'tip', text: '点缩略图换图。前 5 张上照片墙，第一张还兼当封面那张相纸。'
         + '待出行的这一栏是「想去的样子」，一样会显示。' }),
       ...(() => { const all = ofType('photo'); return all.map((e, i) => photoRow(e, i, all)); })(),
-      mini('＋ 加一张', () => grow('photo'))
+      // 加一张就直接摊开选图墙：默认塞一张再让人自己去找，就成了「随机加了一张」
+      mini('＋ 加一张', () => {
+        const e = ST.addEntry(t.id, 'photo');
+        openPick = e && e.id;
+        redraw.all();
+      })
     ];
 
     /* --- 随手写 --- */

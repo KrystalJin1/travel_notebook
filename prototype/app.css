@@ -142,10 +142,25 @@ body{padding:0;min-height:100dvh}
 /* 查不到坐标的码：一个码一行，行首把码本身立起来当标题 */
 .fix .code{flex:none;align-self:center;font-family:var(--display);font-size:14.5px;
   letter-spacing:.06em;color:var(--ink);padding:0 2px}
-/* 照片那一栏行首的小样：换完图当场看见换成了什么（§4.8 100ms 内要有反馈） */
-.thumb{flex:none;width:76px;align-self:center;background:#fff;padding:3px;
-  box-shadow:0 1px 3px rgba(60,50,35,.18)}
+/* 照片那一栏行首的小样：换完图当场看见换成了什么（§4.8 100ms 内要有反馈）。
+   它同时是「点一下换图」的按钮，所以得看出来能点 */
+.thumb{flex:none;width:76px;align-self:center;background:#fff;padding:3px;cursor:pointer;
+  box-shadow:0 1px 3px rgba(60,50,35,.18);transition:box-shadow .12s,transform .12s}
+.thumb:hover{box-shadow:0 2px 7px rgba(60,50,35,.3)}
+.thumb.on{transform:translateY(1px);box-shadow:0 0 0 2px var(--ink) inset}
 .thumb .art-gone{font-size:9px;border-width:1px}
+/* 选图墙：看图选，不认名字。每格就是 T.mediaNode() 画出来的那张图本身 ——
+   格子里看到的就是选完之后卡片上的样子，不是另画一套预览图 */
+.pick{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.pick-i{width:66px;background:#fff;padding:3px 3px 0;cursor:pointer;
+  box-shadow:0 1px 3px rgba(60,50,35,.18)}
+.pick-i:hover{box-shadow:0 2px 7px rgba(60,50,35,.32)}
+.pick-i.on{box-shadow:0 0 0 2px var(--ink),0 2px 6px rgba(60,50,35,.28)}
+/* 图本身不设高：svg.art 按 viewBox、img.art 按 aspect-ratio，都是 10/7，自己撑出来 */
+.pick-i .art-gone{font-size:8px;border-width:1px}
+.pick-t{display:block;font-size:9.5px;line-height:1.5;padding:1px 0 2px;text-align:center;
+  color:#7b6a52;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pick-i.on .pick-t{color:var(--ink)}
 /* 默认文案一律走 placeholder，不写进 value —— 否则用户点开先得删字 */
 .f input::placeholder,.f textarea::placeholder{color:#bcae95;font-family:var(--hand)}
 /* 「填完了」的出口。顶栏那个「完成 ✓」太小，新建完一趟找不着，这里再给一个大的 */
