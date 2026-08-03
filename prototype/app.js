@@ -245,7 +245,12 @@
         h('span', { class: 'go', text: '→' })
       ])
     ]);
-    return tappable(item, () => go('#/trip/' + t.id));
+    return tappable(item, () => {
+      // 点哪一趟，详情页那张卡片就从这张小卡片原来的位置长出来（FLIP，同照片大图那套）。
+      // 量不到位置（还没排版 / 无头测试）时 cardFrom 是个空框，playCardFlip 自会跳过
+      cardFrom = { id: t.id, rect: item.getBoundingClientRect() };
+      go('#/trip/' + t.id);
+    });
   }
 
   /* 分栏按算出来的状态（§3.2）：日期一过，那趟自己从「待出行」挪到「已旅行」，
@@ -984,6 +989,8 @@
   /* 点缩略图时记下它当时的位置，大图就从那儿长出来（FLIP：先把大图缩回小图的
      位置和尺寸，下一帧再放开，浏览器补中间的过程）。翻页时不用它。 */
   let flipFrom = null;
+  // 书架上点开某一趟时记下那张小卡片的位置，详情页的大卡片从那儿展开（§4.8 反 PPT）
+  let cardFrom = null;
 
   const wallOf = t => T.wallPhotos(T.derive(t, ST.ctx()));
 
@@ -1053,6 +1060,29 @@
     });
   }
 
+  /* 详情页的大卡片从书架小卡片的位置展开。跟 playFlip 同一套 FLIP，只是「从」的位置
+     是点开时记下的那张 strip，「到」是详情页里第一张 .card。量不到尺寸就跳过，
+     退回普通的淡入（stub 里 getBoundingClientRect 全是 0，正好不动）。 */
+  function playCardFlip(view, id) {
+    const from = cardFrom;
+    cardFrom = null;
+    if (!from || from.id !== id || !view.querySelector || !root.requestAnimationFrame) return;
+    const card = view.querySelector('.card');
+    if (!card) return;
+    const to = card.getBoundingClientRect(), f = from.rect;
+    if (!to.width || !to.height || !f.width || !f.height) return;
+    card.style.transformOrigin = 'top left';
+    card.style.transform = 'translate(' + (f.left - to.left).toFixed(1) + 'px,'
+      + (f.top - to.top).toFixed(1) + 'px) scale('
+      + (f.width / to.width).toFixed(4) + ',' + (f.height / to.height).toFixed(4) + ')';
+    card.style.opacity = '.6';
+    requestAnimationFrame(() => {
+      card.style.transition = 'transform .32s cubic-bezier(.2,.72,.24,1),opacity .2s ease-out';
+      card.style.transform = 'none';
+      card.style.opacity = '1';
+    });
+  }
+
   /* ================= 八点六、足迹总览 ================= */
 
   function statsView() {
@@ -1119,6 +1149,7 @@
     const entries = trips.reduce((n, t) => n + (t.entries || []).length, 0);
     const glyphs = Object.keys(root.HANDTYPE_GLYPH || {}).length;
     const places = Object.keys(ST.data.places || {}).length;
+    const provs = (root.Providers ? root.Providers.list() : []).length;
 
     const p = txt => h('p', { class: 'about-p', text: txt });
     const big = (n, label) => h('div', { class: 'big' }, [
@@ -1146,12 +1177,13 @@
           big(s.atlas.routes.length, '段航线'),
           big(s.atlas.cities.length, '座城市'),
           big(glyphs, '个字形轮廓'),
-          big(places, '条坐标表')
+          big(places, '条坐标表'),
+          big(provs, '个录入 provider')
         ]),
-        h('div', { class: 'echo', text: '这六个数字都是打开这一页时现算的。' })
+        h('div', { class: 'echo', text: '这七个数字都是打开这一页时现算的。' })
       ]),
       h('div', { class: 'editor' }, [
-        h('h3', { text: '三处有技术含量的地方' }),
+        h('h3', { text: '四处有技术含量的地方' }),
         point('1', '手绘渲染管线',
           '构建时用 fontTools 抽出字形轮廓（handtype.js），运行时交给 rough.js 描边 —— '
           + '标题的笔画本身在抖，不是把整个字当一块砖随机旋转。'
@@ -1165,7 +1197,14 @@
           'kernel.js 只管时间、汇率、汇总、seed；trip.js 是旅行皮肤，认识 leg / place / '
           + 'spend / stay / note / photo，只决定「算什么、放哪个盒子」，不吐一行 SVG；'
           + 'sketch.js 把 data-frame / data-art 变成手绘线。'
-          + '所以换成小程序 canvas 2d 时，前两层白拿。')
+          + '所以换成小程序 canvas 2d 时，前两层白拿。'),
+        point('4', '录入 provider + 字段级评测集',
+          '粘一段行程文字、或选几张照片，provider 把它解析成结构化记录：text 认航段 / 住宿 / '
+          + '花销，exif 从照片读拍摄时间、GPS 反查城市。parse() 是同步纯函数，不碰 DOM / Store、'
+          + '产出不带 id，看不懂的行进 misses（漏解析比错解析可接受，猜错了用户不一定发现）。'
+          + '解析先进「待确认」区，猜的字段标出来让人过一眼，点确认才落库。'
+          + '质量不靠感觉：评测集每条标注期望字段，跑字段级 P/R/F1，任何字段比 baseline 降了 '
+          + 'node test-page.js 直接 FAIL。')
       ]),
       h('div', { class: 'editor' }, [
         h('h3', { text: '数字只有一处出处' }),
@@ -1226,6 +1265,8 @@
     if (lastName === 'cover' && r.name !== 'cover') el.classList.add('flip');
     lastName = r.name;
     atHash = location.hash;
+    // 不是进详情页就把暂存的展开起点丢掉，免得下次从别处回到这一趟时凭空动一下
+    if (r.name !== 'trip') cardFrom = null;
 
     document.body.classList.toggle('at-cover', r.name === 'cover');
     document.body.classList.toggle('at-photo', r.name === 'photo');
@@ -1248,6 +1289,7 @@
     SK.repaint();
     if (root.handtype) root.handtype();
     if (r.name === 'photo') playFlip(el);
+    if (r.name === 'trip' && !r.edit) playCardFlip(el, r.id);
     // 等一帧再滚，不然刚换的内容还没排版，滚到底部会被夹回去
     const y = scrolls[atHash] || 0;
     const scroll = () => { if (root.scrollTo) root.scrollTo(0, y); };

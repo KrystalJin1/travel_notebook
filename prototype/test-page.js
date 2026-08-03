@@ -89,12 +89,16 @@ class El {
   }
   getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, width: this.offsetWidth, height: this.offsetHeight }; }
   closest() { return null; }
-  // 只支持 [attr] 这一种选择器 —— 这页只用得到它
+  // 只支持 [attr] 和 .class 这两种选择器 —— 这页只用得到它们（FLIP 用 .card / .lb-fig）
   querySelectorAll(sel) {
-    const m = /^\[([\w-]+)\]$/.exec(sel);
+    const attr = /^\[([\w-]+)\]$/.exec(sel);
+    const cls = /^\.([\w-]+)$/.exec(sel);
     const out = [];
+    const hit = n => attr ? (attr[1] in n.attrs)
+      : cls ? (n.attrs.class || '').split(/\s+/).indexOf(cls[1]) >= 0
+      : false;
     const walk = n => {
-      if (m && m[1] in n.attrs) out.push(n);
+      if (hit(n)) out.push(n);
       n.children.forEach(walk);
     };
     this.children.forEach(walk);
@@ -397,6 +401,33 @@ function checkShell() {
     '书架少了分区标题');
   ok(document.getElementById('tabs').getElementsByTagName('a')[0]
     .classList.contains('on'), '书架 tab 没点亮');
+
+  /* 书架卡片 → 详情页原位展开（§4.8 反 PPT，跟照片大图同一套 FLIP）。
+     点开某一趟，详情页第一张 .card 应从被点的那张 strip 位置长出来。stub 平时没有
+     rAF，playCardFlip 会安静跳过（退回淡入）；这里临时塞一个立即 rAF 把这条路真的走完，
+     确认：点的是对的那趟、卡片确实被 FLIP 接管过（transformOrigin + transition 都上了）。 */
+  const strip0 = byClass(main, 'tl-item').filter(n => n._on && n._on.click)[0];
+  if (ok(!!strip0, '书架上一趟都没有，没法验展开转场')) {
+    const raf0 = ctx.requestAnimationFrame;
+    ctx.requestAnimationFrame = fn => { if (typeof fn === 'function') fn(); return 0; };
+    strip0._fire('click');
+    App.render();                 // 浏览器里由 hashchange 触发；stub 手动补一下
+    ok(App.parse().name === 'trip', '点书架卡片没进详情页，实际 ' + App.parse().name);
+    const card0 = byClass(main, 'card')[0];
+    if (ok(!!card0, '详情页没渲染出 .card，展开转场无从谈起')) {
+      ok(card0.style.transformOrigin === 'top left' && /transform/.test(card0.style.transition || ''),
+        '详情页卡片没被 FLIP 接管（transformOrigin / transition 没上）');
+      ok(card0.style.transform === 'none' && card0.style.opacity === '1',
+        'FLIP 结束态应该落回 transform:none / opacity:1，实际 '
+        + card0.style.transform + ' / ' + card0.style.opacity);
+    }
+    // 直接 nav 到某趟（不是点卡片）不该凭空展开：cardFrom 已被上一次消费掉且非本趟
+    nav('#/trip/' + ST.data.trips[0].id);
+    const card1 = byClass(main, 'card')[0];
+    ok(!card1 || !card1.style.transition, '不是点卡片进来的，不该触发展开 FLIP');
+    if (raf0 === undefined) delete ctx.requestAnimationFrame; else ctx.requestAnimationFrame = raf0;
+    nav('#/shelf');
+  }
 
   /* 扉页贴纸（§4.8）：第一次进来是展开的，三行说明都在；点「折起」收掉并记住，
      只留右上角一个「?」能叫回来。做成可跳过的启动页就是 PPT 味，所以它必须长在书架上。 */
@@ -1032,7 +1063,7 @@ function checkShell() {
   /* 案例页（M6）：讲技术不讲行程，而且它自己夸的「数字只有一处出处」得当真 ——
      上面那几个大号数字必须跟仓库现算的一致，不许写死在文案里 */
   nav('#/about');
-  ok(byClass(main, 'about-pt').length === 3, '案例页应该写着三处技术重点');
+  ok(byClass(main, 'about-pt').length === 4, '案例页应该写着四处技术重点（含录入 provider + 评测集）');
   const bigs = byClass(main, 'big-n').map(e => e.textContent);
   const entryTotal = ST.data.trips.reduce((n, t) => n + (t.entries || []).length, 0);
   const sum = TV.summary(ST.data.trips, ST.ctx());
@@ -1042,6 +1073,11 @@ function checkShell() {
   ok(bigs.indexOf(String(sum.atlas.routes.length)) >= 0, '案例页写的航线段数跟 atlas() 对不上');
   ok(bigs.indexOf(String(Object.keys(ctx.HANDTYPE_GLYPH || {}).length)) >= 0,
     '案例页写的字形数跟 handtype.js 对不上（handtype.js 得在 app.js 前面加载）');
+  // provider 数也是现算的：跟 Providers.list() 一致，不许在文案里写死
+  ok(ctx.Providers && bigs.indexOf(String(ctx.Providers.list().length)) >= 0,
+    '案例页写的 provider 数跟 Providers.list() 对不上');
+  ok(text().indexOf('评测集') >= 0 && /F1|待确认/.test(text()),
+    '案例页没把 M5 的录入 provider + 字段级评测集这一处讲出来');
   ok(text().indexOf('已飞') >= 0 && text().indexOf('公里') >= 0,
     '案例页应该把 atlas() / summary() 的数字摊出来');
   nav('#/debug');

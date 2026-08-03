@@ -134,8 +134,9 @@ prototype/
   data/samples.json         另外 10 趟 / 155 条 entry，书架底部「载入示例」才进来
   data/places.json          城市与机场坐标（253 条），查不到就列出来让你补，不猜
   media/*.jpg               位图场景插画 8 张（1000×700，825K），构建时内联成 data: URI
-  app.js       (1169 行)    hash 路由 + 封面 / 书架 / 详情 / 编辑 / 明信片 / 地图 / 足迹 / 案例页
+  app.js      (1363 行)     hash 路由 + 封面 / 书架 / 详情 / 编辑 / 明信片 / 地图 / 足迹 / 案例页
   store.js      (214 行)    bundle 之上叠 localStorage 改动 + 自己补的坐标 + 出厂版本指纹 + exportJSON
+  provider.js   (529 行)    录入 provider：manual / text / exif，parse() 同步纯函数，不碰 DOM / Store
   trip.js       (466 行)    旅行皮肤 + 状态机 + derive / atlas / summary
   kernel.js     (136 行)    内核：时间、汇率、汇总、媒体解析、seed —— 不认识「旅行」两个字
   draw.js       (214 行)    渲染后端：笔、颜料、所有 rough 调用都关在这里
@@ -144,10 +145,11 @@ prototype/
   postcard.js   (241 行)    把 derive() 的数字拆成贴片，画成 900×1200 的明信片
   bake.js       (214 行)    存 SVG / PNG / PDF（PDF 骨架手拼，不引第三方库）
   map.js        (364 行)    d3-geo 投影 + 手绘海岸线 + 航线弧（只画，不认识「旅行」）
+  eval/         parse-cases.json（31 条评测集）+ score.js（字段级 P/R/F1）+ baseline.json（回归门槛）
   paper.css / app.css       纸面与卡片 / 页面外壳
   hand-drawn.html           风格样张页（贴纸墙、调参对比）
   map.html                  地图样张页（国界 / 简化两个滑块）
-  test-page.js (1109 行)    stub DOM 跑真页面，262 条断言
+  test-page.js (1455 行)    stub DOM 跑真页面，339 条断言
   build*.py                 字体子集 / 字形轮廓 / 数据打包 / 单文件导出
 ```
 
@@ -213,8 +215,8 @@ app.js      路由 + 页面                     ← 只管把 hash 变成一页
 | M2 | 手帐本外壳：封面 → 书架 → 详情 → 编辑，栈式路由，导出 JSON | ✅ |
 | M3 | 地图接真实航段、照片大图、足迹总览、状态机自动推进 | ✅ |
 | M4 | 拼贴排版引擎 + 明信片 + PNG/PDF/SVG 导出 + 排版快照测试 | ✅ |
-| M5 | 录入 provider（manual / text / exif）+ 解析评测集 | |
-| M6 | 打磨 + README + 案例页 `#/about` | 🚧 进行中 |
+| M5 | 录入 provider（manual / text / exif）+ 解析评测集 | ✅ |
+| M6 | 打磨 + README + 案例页 `#/about` | 🚧 案例页补上 M5、书架→详情共享元素转场已做；配图待补 |
 | M7 | 小程序端：canvas 2d 渲染后端，复用同一内核 | |
 
 明确**不做**的：不碰邮箱（不解析订单邮件、不要授权，航线只来自手输）、不做多人协作 / 社交、
