@@ -480,6 +480,39 @@
      缩略图，每个都要 rough.js 描一遍。 */
   let openPick = null;
 
+  /* 待确认区的状态（同 openPick，得放在 editor() 外面：确认 / 丢弃都会 redraw.all()）。
+     text 是粘进来的原文，out 是 Providers.parse() 的产出，off 记哪几条被人取消了勾。
+     **这一份不进 Store** —— 没点确认之前，读出来的东西只活在内存里（§4.6）。 */
+  let pend = { text: '', out: null, off: {} };
+
+  const PEND_TYPE = { leg: '航段', stay: '住宿', spend: '花销', place: '地点',
+    note: '随手写', photo: '照片' };
+  // source.low 是字段路径，给人看得说人话 —— 不能把 data.checkIn 直接甩到界面上
+  const PEND_LOW = { 'time.start': '日期', 'data.from': '从哪', 'data.to': '到哪',
+    'data.mode': '怎么去', 'data.code': '航班号 / 车次', 'data.flown': '飞没飞',
+    'data.checkIn': '入住', 'data.checkOut': '退房', 'data.booked': '订没订',
+    'data.category': '类目', 'data.currency': '币种', 'data.day': '第几天',
+    'place.name': '地名', 'media': '图' };
+
+  // 一条待确认的 entry 摊成一行字。只是把 entry 里已经有的值排一排，不在这儿算任何数
+  function pendLine(e) {
+    const d = e.data || {}, bits = [];
+    if (e.time && e.time.start) bits.push(String(e.time.start).replace('T', ' '));
+    else if (e.time && e.time.end) bits.push('～' + e.time.end);
+    if (e.type === 'leg') bits.push((d.from || '？') + ' → ' + (d.to || '？')
+      + (d.code ? ' ' + d.code : '') + (d.mode ? '' : '（不知道坐什么）'));
+    if (e.type === 'stay') bits.push((d.checkIn || '？') + ' 到 ' + (d.checkOut || '？')
+      + (d.price ? '　' + d.currency + ' ' + d.price : '') + (d.booked ? '　已订' : ''));
+    if (e.type === 'spend') bits.push((d.category || '') + '　' + (d.currency || '')
+      + ' ' + (d.amount == null ? '' : d.amount));
+    if (e.type === 'place') bits.push(((e.place || {}).name || e.title || '')
+      + (d.day ? '　第 ' + d.day + ' 天' : ''));
+    if (e.type === 'photo') bits.push(String((((e.media || [])[0] || {}).name
+      || ((e.media || [])[0] || {}).path || '一张照片')).slice(0, 40));
+    if (e.type === 'note') bits.push(e.body || e.title || '');
+    return bits.filter(Boolean).join('　');
+  }
+
   function editor(t, redraw) {
     const v = T.derive(t, ST.ctx());
     const ofType = ty => (t.entries || []).filter(e => e.type === ty);
@@ -515,6 +548,125 @@
       ]),
       h('div', { class: 'echo', text: '现在算「' + v.statusLabel + '」'
         + (v.statusLocked ? '：锁住了，日期到了也不动。' : '：按日期自动推进。') })
+    ];
+
+    /* --- 粘一段，自动认（§4.6 / §7.1）---
+       手工填 20 个格子没人愿意干，全自动又一定会读错，而**错了用户不一定发现**。
+       所以读出来的东西先停在这一段里：每条前面一个勾，「这一格是猜的」当场标出来，
+       点「确认」才落库。看不懂的行原样列出来让人自己看，不硬塞成随手写。
+       provider 自己不认识 Store，ctx 是这里喂的：年份和「第一天是哪天」都来自这一趟。 */
+    const sctx = ST.ctx();
+    const pctx = Object.assign({}, sctx, {
+      year: +String(t.time.start || '').slice(0, 4) || sctx.now.getFullYear(),
+      tripStart: t.time.start || ''
+    });
+    const runParse = (input, id) => {
+      pend.out = root.Providers.parse(input, pctx, id);
+      pend.off = {};
+      redraw.all();
+    };
+    const pta = h('textarea', { class: 'pend-in', text: pend.text,
+      placeholder: '一行一条，直接粘订单里那几行：\n'
+        + '3月14日 09:20 SHA MU523 → HND\n'
+        + '入住 THE HOTEL 京都四条 已订 JPY 98,000，3月17日 退房\n'
+        + '3月15日 午餐 一乐拉面 JPY 1,200\n第 3 天 清水寺、二年坂' });
+    commit(pta, () => { pend.text = pta.value; });
+
+    /* 读文件是浏览器的事，解析是纯函数的事（§4.6）：这里只把 File 变成 {name, bytes},
+       读完了才交给 provider —— provider 不认识 File，所以它才测得动。
+       图本身也得存下来才画得出来，但 localStorage 只有几 MB，所以大图只取时间和坐标，
+       画面退回默认那张插画，并且明说了这件事，而不是留一个画不出来的空框。 */
+    const INLINE_MAX = 300 * 1024;
+    const filesIn = h('input', { type: 'file', multiple: true, accept: 'image/*' });
+    commit(filesIn, () => {
+      const list = Array.prototype.slice.call(filesIn.files || []);
+      if (!list.length) return;
+      let left = list.length * 2;
+      const got = [];
+      const done2 = () => {
+        if (--left) return;
+        // 名字 → 那份字节和 data URL，dress() 按 media[0].path（provider 填的就是文件名）回查
+        pend.files = {};
+        got.forEach(g => { pend.files[g.name] = g; });
+        runParse(got, 'exif');
+      };
+      list.forEach((f, i) => {
+        got[i] = { name: f.name, bytes: [], url: '' };
+        const rb = new root.FileReader();
+        rb.onloadend = () => {
+          got[i].bytes = new Uint8Array(rb.result || new ArrayBuffer(0));
+          done2();
+        };
+        rb.readAsArrayBuffer(f);
+        if (f.size > INLINE_MAX) { done2(); return; }
+        const ru = new root.FileReader();
+        ru.onloadend = () => { got[i].url = String(ru.result || ''); done2(); };
+        ru.readAsDataURL(f);
+      });
+    });
+
+    // 照片那一路：把「原图」接到 entry 上（或者说清为什么接不上）。
+    // provider 只知道字节，图存哪儿是页面的事，所以这一步在这里做，不在 provider 里做
+    const dress = e => {
+      if (e.type !== 'photo') return e;
+      const m = (e.media || [])[0] || {};
+      const f = (pend.files || {})[m.path] || {};
+      m.name = m.path;
+      if (f.url) { m.path = f.url; m.kind = 'image'; }
+      else {
+        m.path = '';                                   // 留空 = 用默认那张插画，不是空框
+        e.source.low = (e.source.low || []).concat('media');
+      }
+      return e;
+    };
+
+    const out = pend.out;
+    const pendRows = !out ? [] : (out.entries || []).map((e, i) => {
+      const low = (e.source || {}).low || [];
+      return h('div', { class: 'fix' }, [
+        row([
+          chk('要这条', !pend.off[i], x => { pend.off[i] = !x; }),
+          h('b', { class: 'code', text: PEND_TYPE[e.type] || e.type }),
+          h('span', { class: 'pend-t', text: (e.title ? e.title + '　' : '') + pendLine(e) })
+        ]),
+        h('div', { class: 'echo' + (low.length ? ' danger' : ''),
+          text: (low.length ? '这几格是猜的，过一眼：' + low.map(f => PEND_LOW[f] || f).join('、')
+            : '这条读得挺全')
+            + '　·　把握 ' + Math.round(((e.source || {}).confidence || 0) * 100) + '%' })
+      ]);
+    });
+
+    const keepPend = () => {
+      (out.entries || []).forEach((e, i) => {
+        if (pend.off[i]) return;
+        const patch = Object.assign({}, dress(e));
+        delete patch.type;                             // id 由 Store.addEntry() 发
+        ST.addEntry(t.id, e.type, patch);
+      });
+      pend = { text: '', out: null, off: {} };
+      redraw.all();
+    };
+
+    const paste = [
+      h('h3', { text: '粘一段，自动认' }),
+      h('div', { class: 'tip', text: '粘一段文字或者选几张照片，下面会列出读到的东西 —— '
+        + '**点「确认」才算填进去**。读错的地方直接取消勾，落库之后也照样能改。' }),
+      row([field('粘在这儿', pta, 'wide')]),
+      row([
+        mini('认一下 →', () => { pend.text = pta.value; runParse(pta.value, 'text'); }),
+        root.FileReader ? field('或者选几张照片（读拍摄时间和坐标）', filesIn, 'wide') : null
+      ]),
+      !out ? null : h('div', { class: 'echo',
+        text: '「' + (root.Providers.byId(out.provider) || {}).label + '」读出 '
+          + (out.entries || []).length + ' 条，' + (out.misses || []).length + ' 行没看懂。' }),
+      ...pendRows,
+      !out || !(out.misses || []).length ? null : h('div', { class: 'echo danger',
+        text: '这几行没看懂，自己看一眼：' + out.misses.map(m => '「' + m.line + '」（'
+          + m.why + '）').join('　') }),
+      !out || !(out.entries || []).length ? null : row([
+        mini('确认 ✓ 加进这一趟', keepPend),
+        mini('都不要 ×', () => { pend = { text: pend.text, out: null, off: {} }; redraw.all(); })
+      ])
     ];
 
     /* --- 航段：航线只认这里填的三字码，不从别处猜（§3.2） ---
@@ -730,7 +882,7 @@
     ];
 
     return h('div', { class: 'editor' },
-      [].concat(basic, legs, spends, spots, photos, notes, done, footer));
+      [].concat(basic, paste, legs, spends, spots, photos, notes, done, footer));
   }
 
   /* ================= 八、地图 ================= */

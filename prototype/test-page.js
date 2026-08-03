@@ -785,6 +785,121 @@ function checkShell() {
     }
   }
 
+  /* 「粘一段，自动认」那一栏（§4.6）：录入这层的产出**先停在待确认区**，
+     点了确认才进仓库 —— 全自动一定会读错，而错了用户不一定发现（§7.1）。
+     读得准不准由 eval/ 那套 F1 卡（下面三点七），这里卡的是这条契约本身：
+     没点确认之前一条都不许落库、取消了勾的那条不许偷偷跟着进去。
+     另开一趟干净的：这一段会往仓库里加东西，不该脏到出厂那四趟。 */
+  {
+    // 页面负责把 File 读成字节（provider 只认字节），所以这层得有个 FileReader
+    ctx.FileReader = function () {
+      const fire = () => { if (this.onloadend) this.onloadend({ target: this }); };
+      this.readAsArrayBuffer = f => { this.result = f._bytes; fire(); };
+      this.readAsDataURL = f => {
+        this.result = 'data:image/jpeg;base64,' + Buffer.from(f._bytes).toString('base64');
+        fire();
+      };
+    };
+
+    const sid = ST.newTrip();
+    ST.patchTrip(sid, tr => { tr.time.start = '2026-03-14'; tr.time.end = '2026-03-20'; });
+    nav('#/trip/' + sid + '/edit');
+    const ents = () => ST.trip(sid).entries || [];
+    const base = ents().length;
+    // 待确认的条数 = 「要这条」那几个勾。等一个 class 不如等这个标签，它就是契约本身
+    const boxes = () => all(main)
+      .filter(n => n.tagName === 'LABEL' && n.textContent.indexOf('要这条') === 0)
+      .map(l => l.children.filter(c => c.tagName === 'INPUT')[0]);
+
+    const ta = fieldNamed(main, '粘在这儿');
+    if (ok(!!ta, '编辑器少了「粘一段，自动认」那一栏')) {
+      ok(!boxes().length, '还没点「认一下」就摊出待确认的条目了');
+      ta.value = '3月14日 09:20 SHA MU523 → HND\n'
+        + '3月15日 午餐 一乐拉面 JPY 1,200\n'
+        + '第 3 天 清水寺\n'
+        + '哦对了';
+      ta._fire('change');
+      const run = tapped(main, '认一下 →');
+      if (ok(!!run, '找不到「认一下 →」')) {
+        run._fire('click');
+        ok(ents().length === base,
+          '还没点确认东西就落库了 —— 待确认区就白做了：' + base + ' → ' + ents().length);
+        ok(boxes().length === 3, '这四行该读出 3 条，实际 ' + boxes().length);
+        ok(text().indexOf('读出 3 条，1 行没看懂') >= 0,
+          '待确认区没报「读出几条 · 几行没看懂」');
+        ok(text().indexOf('哦对了') >= 0, '看不懂的那一行该原样列出来让人自己看');
+        // source.low 是字段路径，摊到界面上必须翻成人话（不能甩 data.flown 给用户）
+        ok(text().indexOf('这几格是猜的，过一眼：飞没飞') >= 0,
+          'source.low 没翻成人话摊在那一条下面');
+
+        // 取消中间那条（那笔花销）的勾，确认之后它不许跟着落库
+        boxes()[1].checked = false;
+        boxes()[1]._fire('change');
+        const keep = tapped(main, '确认 ✓ 加进这一趟');
+        if (ok(!!keep, '找不到「确认 ✓ 加进这一趟」')) {
+          keep._fire('click');
+          const got = ents().slice(base);
+          ok(got.length === 2, '取消了一条，该只落 2 条，实际 ' + got.length);
+          ok(!got.some(e => e.type === 'spend'), '取消了勾的那条还是落库了');
+          ok(got.every(e => e.id && (e.source || {}).provider === 'text'),
+            '落库的条目该带 id 和 source.provider：' + JSON.stringify(got.map(e => e.source)));
+          ok(!boxes().length, '确认之后待确认区该清空');
+        }
+      }
+    }
+
+    // 「都不要 ×」：清掉待确认区，一条都不许落库
+    const ta2 = fieldNamed(main, '粘在这儿');
+    if (ta2) {
+      ta2.value = '3月16日 晚餐 居酒屋 JPY 4,000';
+      ta2._fire('change');
+      tapped(main, '认一下 →')._fire('click');
+      const n2 = ents().length;
+      ok(boxes().length === 1, '这一行该读出 1 条，实际 ' + boxes().length);
+      const drop = tapped(main, '都不要 ×');
+      if (ok(!!drop, '找不到「都不要 ×」')) {
+        drop._fire('click');
+        ok(!boxes().length, '点了「都不要」待确认区还在');
+        ok(ents().length === n2, '点了「都不要」反而落库了');
+      }
+    }
+
+    /* 照片那一路：provider 只认字节，「图存哪儿」是页面的事（dress()）。
+       localStorage 只有几 MB，所以超过 300KB 的只留时间和坐标，画面退回默认插画
+       并把这一格标成要人看一眼 —— 留一个画不出来的空框才是最糟的那种「错」。 */
+    const shots = [
+      { name: 'IMG_1.jpg', size: 1000, _bytes: jpegExif('2026:03:15 10:24:00', 135.77, 35.01) },
+      { name: 'IMG_2.jpg', size: 400 * 1024, _bytes: jpegExif('2026:03:15 16:02:00', 135.77, 35.01) }
+    ];
+    const fin = fieldNamed(main, '或者选几张照片（读拍摄时间和坐标）');
+    if (ok(!!fin, '编辑器少了「选几张照片」那个入口')) {
+      fin.files = shots;
+      fin._fire('change');
+      const n3 = ents().length;
+      ok(boxes().length === 3,
+        '同天同地的两张该读出 2 条照片 + 1 条地点（地点按天去重），实际 ' + boxes().length);
+      ok(text().indexOf('2026-03-15 10:24') >= 0, '照片那条没把读出来的拍摄时间摊出来');
+      ok(text().indexOf('京都') >= 0, 'GPS 135.77/35.01 该反查出京都');
+      tapped(main, '确认 ✓ 加进这一趟')._fire('click');
+      const ph = ents().filter(e => e.type === 'photo');
+      ok(ents().length === n3 + 3, '照片这三条没全落库');
+      const mediaOf = nm => (ph.filter(e => (e.media[0] || {}).name === nm)[0]
+        || { media: [{}] }).media[0];
+      const m1 = mediaOf('IMG_1.jpg'), m2 = mediaOf('IMG_2.jpg');
+      ok(/^data:image\//.test(m1.path || '') && m1.kind === 'image',
+        '小图该内联成 data: URI 存下来，实际 ' + String(m1.path).slice(0, 24));
+      ok(m2.path === '', '超过 300KB 的图不该塞进 localStorage，实际 ' + String(m2.path).slice(0, 24));
+      ok(ph.some(e => ((e.source || {}).low || []).indexOf('media') >= 0),
+        '接不上原图的那条该标成要人看一眼（low 里得有 media）');
+      ok(ents().some(e => e.type === 'place' && (e.source || {}).provider === 'exif'),
+        'GPS 反查出来的那条地点没落库，或者 source.provider 盖错了');
+    }
+
+    // 这一趟只为验待确认区而开，验完收走 —— 后面的断言跑在出厂那几趟上
+    ST.removeTrip(sid);
+    App.render();
+  }
+
   // #/map/CODE 是「点图补坐标」模式：顶栏换成取消，地图光标换十字
   nav('#/map/ZZZ');
   ok(text().indexOf('ZZZ') >= 0 && !!tapped(main, '取消 ×'),
@@ -1035,6 +1150,200 @@ function checkPostcard() {
   return { document, cards };
 }
 
+/* ==================== 三点七、录入 provider（§4.6 / §7.1） ====================
+
+   provider 是同步纯函数，所以不需要整页 —— 把 bundle + kernel + provider 三个脚本
+   跑进一个**没有 document 的空 context** 就够了。这件事本身就是那条边界的证明：
+   没有 DOM、没有 Store，它照样跑得起来；哪天有人在 provider 里伸手去问 Store，
+   这一节当场就崩。 */
+function providerCtx() {
+  const c = vm.createContext({ console });
+  c.window = c.self = c;
+  ['data/bundle.js', 'kernel.js', 'provider.js'].forEach(f =>
+    vm.runInContext(fs.readFileSync(path.join(HERE, f), 'utf8'), c, { filename: f }));
+  return c;
+}
+
+/* 手搓一个带 EXIF 的 JPEG。偏移量全按字节数写死在下面这几个常量里 ——
+   EXIF 的规矩是「值超过 4 字节才存 offset，否则就地存」，这条搞错读出来全是垃圾，
+   所以测试里必须真按这个规矩摆一遍，而不是喂一张真图了事（真图还得进仓库）。 */
+function jpegExif(dt, lon, lat) {
+  const IFD0 = 8, EXIF = 38, DT = 56, GPS = 76, LAT = 130, LON = 154, END = 178;
+  const t = [];
+  const u16 = v => t.push(v & 255, (v >> 8) & 255);
+  const u32 = v => t.push(v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >> 24) & 255);
+  const ent = (tag, type, cnt, val) => { u16(tag); u16(type); u32(cnt); u32(val); };
+  // 度分秒，秒留两位小数（分母 100）—— 相机就是这么写的
+  const dms = x => {
+    const a = Math.abs(x), d = Math.floor(a), m = Math.floor((a - d) * 60);
+    u32(d); u32(1); u32(m); u32(1); u32(Math.round(((a - d) * 60 - m) * 6000)); u32(100);
+  };
+  t.push(0x49, 0x49); u16(0x2A); u32(IFD0);            // 'II' 小端 + TIFF 魔数
+  u16(2); ent(0x8769, 4, 1, EXIF); ent(0x8825, 4, 1, GPS); u32(0);
+  u16(1); ent(0x9003, 2, 20, DT); u32(0);              // DateTimeOriginal
+  for (let i = 0; i < 20; i++) t.push(i < dt.length ? dt.charCodeAt(i) : 0);
+  u16(4);
+  ent(0x0001, 2, 2, (lat < 0 ? 0x53 : 0x4E));          // 'S' / 'N'，两字节就地存
+  ent(0x0002, 5, 3, LAT);
+  ent(0x0003, 2, 2, (lon < 0 ? 0x57 : 0x45));          // 'W' / 'E'
+  ent(0x0004, 5, 3, LON);
+  u32(0);
+  dms(lat); dms(lon);
+  if (t.length !== END) throw new Error('EXIF 段长度算错了：' + t.length + ' ≠ ' + END);
+  const len = 2 + 6 + END;
+  return [0xFF, 0xD8, 0xFF, 0xE1, (len >> 8) & 255, len & 255,
+    0x45, 0x78, 0x69, 0x66, 0, 0].concat(t, [0xFF, 0xD9]);
+}
+
+function checkProviders() {
+  const c = providerCtx();
+  const P = c.Providers, D = c.DATA;
+  // 跟页面查同一张表：places / rates 直接用 data/bundle.js 里那一份，
+  // 不在测试里另抄一份 —— 抄一份就等于测了一个页面上不存在的世界
+  const cx = { places: D.places, rates: D.rates, baseCurrency: D.baseCurrency || 'CNY' };
+
+  /* --- 边界：不碰 DOM、不碰 Store（§6.1）。用源码查，因为「这次没走到那行」
+         不等于「没写那行」—— 加个 UI 提示时最容易顺手就把 Store 抓进来 --- */
+  const src = fs.readFileSync(path.join(HERE, 'provider.js'), 'utf8')
+    // 注释先去掉：里头写着「id 由 Store.addEntry() 发」，那是在说明边界，不是真去调它
+    .replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  ok(!/\bStore\b/.test(src), 'provider.js 里出现了 Store —— 它不该知道自己会落进哪一趟');
+  ok(!/\bdocument\b/.test(src), 'provider.js 里出现了 document —— 解析层不许碰 DOM');
+  ok(typeof c.document === 'undefined', '没有 document 也得跑得起来');
+
+  /* --- 接口：三个 provider 同一套签名，pick() 挑得对 --- */
+  const ids = P.list().map(p => p.id);
+  ok(ids.join(',') === 'exif,text,manual', 'provider 名单不对：' + ids.join(','));
+  ok(P.list().every(p => p.label && p.hint), '每个 provider 都得有给人看的名字和一句说明');
+  ok(P.pick('3月14日 SHA → HND MU523').id === 'text', '一段文字该交给 text');
+  ok(P.pick([{ name: 'a.jpg', bytes: [1, 2] }]).id === 'exif', '一批照片该交给 exif');
+  ok(P.pick({ type: 'spend' }).id === 'manual', '明说了 type 的对象该交给 manual');
+  ok(P.pick('') === null && P.pick(null) === null, '空输入不该有人认领');
+
+  /* --- 产出契约：不带 id、一律带 source --- */
+  const r1 = P.parse('3月14日 09:20 SHA MU523 → HND', cx);
+  ok(r1.provider === 'text' && r1.entries.length === 1, 'text 该读出一条：' + r1.entries.length);
+  const e1 = r1.entries[0];
+  ok(!('id' in e1), 'provider 不许自己发 id —— id 由 Store.addEntry() 发');
+  ok(e1.source.provider === 'text' && e1.source.confidence > 0 && e1.source.confidence <= 1,
+    'source 没盖对：' + JSON.stringify(e1.source));
+  ok(Array.isArray(e1.tags) && typeof e1.data === 'object', 'entry 的形状跟手填的那条得一样');
+  // 同输入必须同输出，否则评测集当不了回归门槛
+  ok(JSON.stringify(P.parse('3月14日 09:20 SHA MU523 → HND', cx)) === JSON.stringify(r1),
+    'parse() 不是纯函数 —— 同一段文字两次读出不一样的东西');
+
+  /* --- manual：confidence 恒为 1，说不清是哪一类就收进 misses --- */
+  const m = P.parse({ type: 'spend', data: { amount: 12, currency: 'CNY', category: '吃' } }, cx);
+  ok(m.entries[0].source.confidence === 1, '手填的那条不该带「要人看一眼」');
+  ok(P.parse({ type: '随便' }, cx).misses.length === 1, '没说清哪一类的该收进 misses');
+  ok(!('id' in P.parse({ type: 'note', id: 'x-1' }, cx).entries[0]),
+    'manual 也不许把外面塞的 id 带进去');
+
+  /* --- text：几条挑出来单看的。整体分数交给下面的评测集，这里只钉死几条
+         「错了会很难看」的行为，出问题时能一眼看出坏在哪一步 --- */
+  const one = (s, extra) => P.parse(s, Object.assign({ year: 2026 }, cx, extra || {})).entries;
+  const leg = one('3月14日 09:20 SHA MU523 → HND 东京羽田')[0];
+  ok(leg.type === 'leg' && leg.data.code === 'MU523' && leg.data.mode === 'air',
+    '航班这条读错了：' + JSON.stringify(leg.data));
+  ok(leg.time.start === '2026-03-14T09:20', '日期 + 钟点没拼上：' + leg.time.start);
+  ok(leg.data.from === 'SHA' && leg.data.to === 'HND', '起降地读错了：' + JSON.stringify(leg.data));
+  ok((leg.source.low || []).indexOf('data.flown') >= 0, '「飞没飞」是猜的，必须标出来');
+
+  // 「浦东 T1」里的 T1 不是车次 —— 这条塌了就会凭空多出一趟火车
+  const t1 = one('3月14日 07:00 浦东 T1 集合')[0];
+  ok(t1.type === 'place', '航站楼 T1 被当成车次了：' + t1.type + '/' + (t1.data || {}).code);
+
+  const stay = one('2026-03-14 入住 THE HOTEL 京都四条 已订 JPY 98,000，3月17日 退房')[0];
+  ok(stay.type === 'stay' && stay.data.checkIn === '2026-03-14' && stay.data.checkOut === '2026-03-17',
+    '住宿的进出日期读错了：' + JSON.stringify(stay.data));
+  ok(stay.data.booked === true && stay.data.price === 98000 && stay.data.currency === 'JPY',
+    '住宿的钱和「已订」读错了：' + JSON.stringify(stay.data));
+  ok(!/98,000|JPY/.test(stay.title), '标题里还留着金额：' + stay.title);
+
+  // 缺汇率不许静默当 1:1（§3.2）—— Kernel.convert() 会返回 NaN，所以这一格必须让人看见
+  const chf = one('3月16日 纪念品 CHF 42')[0];
+  ok(chf.data.currency === 'CHF' && (chf.source.low || []).indexOf('data.currency') >= 0,
+    '缺汇率的币种没标成要人看一眼：' + JSON.stringify(chf.source));
+  ok(!isFinite(c.Kernel.convert(42, 'CHF', D.rates, D.baseCurrency)),
+    '这条测试的前提没了：CHF 现在有汇率了，换一个没汇率的币种');
+
+  // 一行坏了不许牵连别行（§7.1）
+  const many = P.parse('2026-03-14 09:20 SHA MU523 → HND\n随手记一句\n3月15日 午餐 JPY 1,200',
+    Object.assign({ year: 2026 }, cx));
+  ok(many.entries.length === 2 && many.misses.length === 1,
+    '一行看不懂就该只丢那一行：读出 ' + many.entries.length + ' 条 / 看不懂 ' + many.misses.length + ' 行');
+  ok(many.misses[0].why, '收进 misses 的行得说清为什么看不懂');
+
+  /* --- exif：喂手搓的 JPEG 字节，不喂真图（真图得进仓库，而且坏了看不出坏在哪一位） --- */
+  const shot = (dt, lon, lat, name) => ({ name: name || 'IMG_1.jpg', bytes: jpegExif(dt, lon, lat) });
+  const px = P.parse([shot('2026:03:15 10:24:31', 135.77, 35.01)], cx);
+  ok(px.provider === 'exif', 'exif 没接手：' + px.provider);
+  const ph = px.entries.filter(e => e.type === 'photo');
+  ok(ph.length === 1 && ph[0].time.start === '2026-03-15T10:24',
+    '拍摄时间读错了：' + JSON.stringify(ph[0] && ph[0].time));
+  ok(ph[0].media && ph[0].media[0].path === 'IMG_1.jpg', '照片没带上文件名');
+  const gp = px.entries.filter(e => e.type === 'place');
+  ok(gp.length === 1 && gp[0].place.name === '京都' && gp[0].time.start === '2026-03-15',
+    'GPS 没反查到京都：' + JSON.stringify(gp.map(e => e.place)));
+  // 反查出来的只是「最近的城市」，不是「去了哪个景点」，所以这一格一定要人看一眼
+  ok((gp[0].source.low || []).indexOf('place.name') >= 0,
+    'GPS 猜的地名没标成要人看一眼：' + JSON.stringify(gp[0].source));
+
+  // 同一天同一个地方拍十张，也只该多出一条 place
+  const px2 = P.parse([shot('2026:03:15 10:24:31', 135.77, 35.01, 'a.jpg'),
+    shot('2026:03:15 18:02:00', 135.77, 35.01, 'b.jpg')], cx);
+  ok(px2.entries.filter(e => e.type === 'photo').length === 2, '两张照片该出两条 photo');
+  ok(px2.entries.filter(e => e.type === 'place').length === 1,
+    '同一天同一个地方的 place 没去重');
+
+  // 不是 JPEG：照样收这张图（图是真的），但时间标成不知道，并说清为什么
+  const bad1 = P.parse([{ name: 'x.png', bytes: [0x89, 0x50, 0x4E, 0x47] }], cx);
+  ok(bad1.entries.length === 1 && bad1.entries[0].type === 'photo' &&
+    !bad1.entries[0].time.start, '读不出 EXIF 的照片该照收，但不许编个时间');
+  ok((bad1.entries[0].source.low || []).indexOf('time.start') >= 0 && bad1.misses.length === 1,
+    '读不出拍摄时间这件事得让人看见');
+
+  // 太平洋中间：表里 60km 内没有已知地点，就别硬认成最近那座城市（§7.1）
+  const far = P.parse([shot('2026:03:15 10:24:31', 160.0, 30.0)], cx);
+  ok(!far.entries.some(e => e.type === 'place'), '离已知地点几百公里，还是硬认了一个地名');
+  ok(far.misses.length === 1 && /km/.test(far.misses[0].why),
+    '认不出坐标该说清是「表里附近没有」：' + JSON.stringify(far.misses));
+
+  /* --- 评测集：字段级 P / R / F1，跟 baseline 比（§7.1）---
+         规则一改就重算一遍分，降了就 FAIL 并把表打出来。
+         想主动看表：node test-page.js --eval
+         确认这次是「有意的取舍」而不是退步，再 node test-page.js --record 重录 baseline。
+         第一次跑（还没有 baseline）就地录一份并把表打出来 —— 门槛从这一刻开始存在，
+         但评测集条数一变就得显式重录，不让它悄悄失效。 */
+  const SC = require('./eval/score.js');
+  const spec = JSON.parse(fs.readFileSync(path.join(HERE, 'eval/parse-cases.json'), 'utf8'));
+  const res = SC.score(spec, (input, ectx) => P.parse(input, ectx, 'text'), cx);
+
+  const bpath = path.join(HERE, 'eval/baseline.json');
+  const first = !fs.existsSync(bpath);
+  if (first || process.argv.includes('--record')) {
+    fs.writeFileSync(bpath, JSON.stringify(SC.snapshot(res), null, 2) + '\n');
+    console.log((first ? '第一次跑，录下 ' : '已重录 ') + 'eval/baseline.json：' + res.n
+      + ' 条，整体 F1 ' + (res.overall.f1 * 100).toFixed(1) + '%');
+  }
+  const worse = SC.gate(res, JSON.parse(fs.readFileSync(bpath, 'utf8')));
+  if (first || worse.length || process.argv.includes('--eval')) console.log(SC.table(res));
+  // 门槛卡住了但确认要接受时：把这一行贴进 eval/baseline.json（或者 --record 让它自己写）
+  if (worse.length) console.log('  这次的分：'
+    + JSON.stringify(Object.assign(SC.snapshot(res), { _: undefined })));
+  ok(!worse.length, '解析质量退了（上面是明细，确认要接受再 --record）：\n      ' + worse.join('\n      '));
+
+  // 「哪几格是猜的」和「看不懂几行」是另外两条契约，不进 F1，一样不许坏
+  const lowBad = res.cases.filter(x => x.lowMiss.length);
+  ok(!lowBad.length, '这些 case 该标「要人看一眼」的格子没标：'
+    + lowBad.map(x => x.id + '（' + x.lowMiss.join('、') + '）').join('；'));
+  const missBad = res.cases.filter(x => x.missBad);
+  ok(!missBad.length, '看不懂的行数不对：'
+    + missBad.map(x => x.id + ' 要 ' + x.missWant + ' 条、实际 ' + x.missGot + ' 条').join('；'));
+
+  return res;
+}
+
 /* ==================== 四、导 svg（--svg） ==================== */
 
 function dumpSvg(document, pc) {
@@ -1096,6 +1405,7 @@ ok(a === b, '两次渲染结果不一致 —— seed 没锁住');
 const artDoc = checkArt();
 checkShell();
 const pc = checkPostcard();
+checkProviders();
 
 if (process.argv.includes('--svg')) dumpSvg(artDoc, pc);
 

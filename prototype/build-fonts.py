@@ -33,10 +33,12 @@ PUNCT = "·—…、。，；：？！（）「」『』【】《》〈〉“”
 LATIN_EXTRA = "①②③④⑤⑥⑦⑧⑨⑩ºªµ×÷±"
 # 会出现在页面上的字都得扫一遍：文案散在 html / js / data 三处，漏一个文件就掉字。
 # samples.json 也要扫 —— 那几趟点「载入示例」才进来，但进来之后一样要显示。
-# 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、test-page.js（只在终端里）。
+# provider.js 也要扫：类目名（交通/吃/门票…）和「看不懂这一行」的说法都会显示出来。
+# 排除 vendor/rough.js（没有中文）、handtype.js（本身是构建产物）、
+# test-page.js 和 eval/*（只在终端里）。
 SOURCES = ["index.html", "hand-drawn.html", "map.html",
            "app.js", "store.js", "trip.js", "kernel.js", "sketch.js", "map.js",
-           "postcard.js", "bake.js",
+           "postcard.js", "bake.js", "provider.js",
            "data/trips.json", "data/places.json", "data/samples.json"]
 
 

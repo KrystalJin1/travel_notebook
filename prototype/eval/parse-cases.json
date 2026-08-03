@@ -1,0 +1,242 @@
+{
+  "_": [
+    "text provider 的评测集（§7.1）。改词表 / 改正则之后 F1 不许降 —— 门槛在 eval/baseline.json，",
+    "由 test-page.js 跑，跟别的断言一起卡。",
+    "",
+    "计分只管「错了不一定会被发现」的那些格子：日期、金额、币种、起降地、类目、第几天。",
+    "**标题不计分** —— 它是给人看的一行字，错了打开卡片就看见、改起来一秒；",
+    "把它算进 F1 只会让分数被措辞左右，掩盖真正该盯的字段。",
+    "",
+    "want 里写的是「正确答案」，不是「现在的输出」。所以 F1 本来就不该是 1.0：",
+    "分数是用来跟上一版比的，不是用来自我表扬的。id 以「已知读不对-」开头的那几条，",
+    "是明知规则读不对、也不打算靠加词表硬凑的：人均乘人数、一行说了两件事、",
+    "同一行里前后两个金额该取后一个。它们在分数里留着账 —— 哪天换个 provider 顶上来，",
+    "涨的就是这几分；现在把它们从评测集里删掉，只是把问题藏起来。",
+    "空值（'' / null / false / 缺字段）一律当「这一格没有」，两边都没有就不计分 ——",
+    "于是 flown / booked 这种默认 false 的格子不必每条都写。",
+    "",
+    "places 和 rates 不写在这儿：runner 直接拿页面用的那一份（Store.ctx()），",
+    "评测集和页面必须查同一张表，否则测过了页面上照样错。"
+  ],
+
+  "scored": [
+    "type", "time.start", "time.end",
+    "data.from", "data.to", "data.mode", "data.code",
+    "data.amount", "data.price", "data.currency", "data.category",
+    "data.checkIn", "data.checkOut", "data.booked", "data.day",
+    "place.name", "place.city"
+  ],
+
+  "ctx": { "year": 2026, "tripStart": "2026-03-14" },
+
+  "cases": [
+    {
+      "id": "leg-航班号",
+      "in": "3月14日 09:20 SHA MU523 → HND 东京羽田",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-14T09:20" },
+        "data": { "from": "SHA", "to": "HND", "mode": "air", "code": "MU523" } }]
+    },
+    {
+      "id": "leg-整日期",
+      "in": "2026-03-18 NRT → PVG MU524 已确认",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-18" },
+        "data": { "from": "NRT", "to": "PVG", "mode": "air", "code": "MU524" } }]
+    },
+    {
+      "id": "leg-新干线-无车次",
+      "in": "3/16 京都 → 东京 新干线 のぞみ 226 号",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-16" },
+        "data": { "from": "京都", "to": "东京", "mode": "rail", "code": "" } }]
+    },
+    {
+      "id": "leg-车次",
+      "in": "2026-05-02 08:12 上海 → 杭州 G7503 次列车",
+      "want": [{ "type": "leg", "time": { "start": "2026-05-02T08:12" },
+        "data": { "from": "上海", "to": "杭州", "mode": "rail", "code": "G7503" } }]
+    },
+    {
+      "id": "leg-大巴-靠两个地名",
+      "in": "3月17日 大巴 箱根 → 东京",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-17" },
+        "data": { "from": "箱根", "to": "东京", "mode": "bus", "code": "" } }]
+    },
+    {
+      "id": "回归-航站楼T1不是车次",
+      "in": "3月14日 07:00 浦东 T1 集合",
+      "want": [{ "type": "place", "time": { "start": "2026-03-14" },
+        "place": { "name": "上海", "city": "上海" }, "data": { "day": 1 } }]
+    },
+    {
+      "id": "leg-认不出的车型",
+      "in": "3/17 12:30 箱根 → 东京 小田急ロマンスカー",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-17T12:30" },
+        "data": { "from": "箱根", "to": "东京", "mode": "rail", "code": "" } }]
+    },
+    {
+      "id": "stay-只有退房",
+      "in": "3月18日 退房 THE HOTEL 京都四条",
+      "low": ["data.checkIn", "data.checkOut", "data.booked"],
+      "want": [{ "type": "stay", "time": { "end": "2026-03-18" },
+        "data": { "checkIn": "", "checkOut": "2026-03-18" } }]
+    },
+    {
+      "id": "leg-箭头但认不出交通工具",
+      "in": "3月17日 箱根 → 东京",
+      "low": ["data.mode"],
+      "want": [{ "type": "leg", "time": { "start": "2026-03-17" },
+        "data": { "from": "箱根", "to": "东京", "mode": "", "code": "" } }]
+    },
+    {
+      "id": "stay-进出齐全",
+      "in": "2026-03-14 入住 THE HOTEL 京都四条 已订 JPY 98,000，3月17日 退房",
+      "want": [{ "type": "stay", "time": { "start": "2026-03-14", "end": "2026-03-17" },
+        "data": { "checkIn": "2026-03-14", "checkOut": "2026-03-17", "booked": true,
+          "price": 98000, "currency": "JPY" } }]
+    },
+    {
+      "id": "stay-没日期",
+      "in": "青旅 一晚 ¥180",
+      "low": ["data.checkIn", "data.checkOut", "data.booked"],
+      "want": [{ "type": "stay", "data": { "price": 180, "currency": "CNY" } }]
+    },
+    {
+      "id": "stay-只有入住",
+      "in": "3月20日 check-in 民宿 白川乡",
+      "want": [{ "type": "stay", "time": { "start": "2026-03-20" },
+        "data": { "checkIn": "2026-03-20", "checkOut": "" } }]
+    },
+    {
+      "id": "spend-吃-三字码币种",
+      "in": "3月15日 午餐 一乐拉面 JPY 1,200",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-15" },
+        "data": { "amount": 1200, "currency": "JPY", "category": "吃" } }]
+    },
+    {
+      "id": "spend-交通-中文币种",
+      "in": "3月15日 地铁一日券 800日元",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-15" },
+        "data": { "amount": 800, "currency": "JPY", "category": "交通" } }]
+    },
+    {
+      "id": "spend-基准币-符号",
+      "in": "3月13日 机场大巴 ¥54",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-13" },
+        "data": { "amount": 54, "currency": "CNY", "category": "交通" } }]
+    },
+    {
+      "id": "spend-缺汇率要人看",
+      "in": "3月16日 纪念品 CHF 42",
+      "low": ["data.currency"],
+      "want": [{ "type": "spend", "time": { "start": "2026-03-16" },
+        "data": { "amount": 42, "currency": "CHF", "category": "购物" } }]
+    },
+    {
+      "id": "spend-认不出类目",
+      "in": "3月16日 杂七杂八 JPY 640",
+      "low": ["data.category"],
+      "want": [{ "type": "spend", "time": { "start": "2026-03-16" },
+        "data": { "amount": 640, "currency": "JPY", "category": "其他" } }]
+    },
+    {
+      "id": "spend-门票",
+      "in": "3月16日 天空展望台 门票 2,000日元",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-16" },
+        "data": { "amount": 2000, "currency": "JPY", "category": "门票" } }]
+    },
+    {
+      "id": "spend-美元小数",
+      "in": "3月16日 免税店 USD 128.50",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-16" },
+        "data": { "amount": 128.5, "currency": "USD", "category": "购物" } }]
+    },
+    {
+      "id": "spend-压过地名",
+      "in": "3月15日 京都 咖啡 JPY 480",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-15" },
+        "data": { "amount": 480, "currency": "JPY", "category": "吃" } }]
+    },
+    {
+      "id": "place-第N天-顿号分隔",
+      "in": "第 3 天 清水寺、二年坂、八坂神社",
+      "want": [
+        { "type": "place", "place": { "name": "清水寺" }, "data": { "day": 3 } },
+        { "type": "place", "place": { "name": "二年坂" }, "data": { "day": 3 } },
+        { "type": "place", "place": { "name": "八坂神社" }, "data": { "day": 3 } }
+      ]
+    },
+    {
+      "id": "place-day-N-空格分隔",
+      "in": "day 2 奈良 东大寺 若草山",
+      "want": [
+        { "type": "place", "place": { "name": "奈良", "city": "奈良" }, "data": { "day": 2 } },
+        { "type": "place", "place": { "name": "东大寺", "city": "奈良" }, "data": { "day": 2 } },
+        { "type": "place", "place": { "name": "若草山", "city": "奈良" }, "data": { "day": 2 } }
+      ]
+    },
+    {
+      "id": "回归-不切原文-只收认出的地名",
+      "in": "3-14 到 3-17 京都",
+      "low": ["data.day"],
+      "want": [{ "type": "place", "place": { "name": "京都", "city": "京都" } }]
+    },
+    {
+      "id": "place-日期换算第几天",
+      "in": "2026-03-16 镰仓 江之岛",
+      "want": [{ "type": "place", "time": { "start": "2026-03-16" },
+        "place": { "name": "镰仓", "city": "镰仓" }, "data": { "day": 3 } }]
+    },
+    {
+      "id": "回归-离谱的钟点不收",
+      "in": "3月14日 25:99 SHA → HND MU523",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-14" },
+        "data": { "from": "SHA", "to": "HND", "mode": "air", "code": "MU523" } }]
+    },
+    {
+      "id": "leg-只说了方式",
+      "in": "3月14日 航班 上海 → 东京",
+      "want": [{ "type": "leg", "time": { "start": "2026-03-14" },
+        "data": { "from": "上海", "to": "东京", "mode": "air", "code": "" } }]
+    },
+    {
+      "id": "miss-看不懂就收进misses",
+      "in": "天气不错，随手拍了几张",
+      "misses": 1,
+      "want": []
+    },
+    {
+      "id": "miss-一行坏了不牵连别行",
+      "in": "2026-03-14 09:20 SHA MU523 → HND\n入住 京都 THE HOTEL 已订 JPY 98,000\n随手记一句\n3月15日 午餐 JPY 1,200",
+      "misses": 1,
+      "want": [
+        { "type": "leg", "time": { "start": "2026-03-14T09:20" },
+          "data": { "from": "SHA", "to": "HND", "mode": "air", "code": "MU523" } },
+        { "type": "stay", "data": { "booked": true, "price": 98000, "currency": "JPY" } },
+        { "type": "spend", "time": { "start": "2026-03-15" },
+          "data": { "amount": 1200, "currency": "JPY", "category": "吃" } }
+      ]
+    },
+
+    {
+      "id": "已知读不对-人均要乘人数",
+      "in": "3月15日 晚餐 居酒屋 人均 3,500日元 × 2 人",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-15" },
+        "data": { "amount": 7000, "currency": "JPY", "category": "吃" } }]
+    },
+    {
+      "id": "已知读不对-一行两件事",
+      "in": "3月15日 从京都坐 JR 到大阪，票价 570 日元",
+      "want": [
+        { "type": "leg", "time": { "start": "2026-03-15" },
+          "data": { "from": "京都", "to": "大阪", "mode": "rail", "code": "" } },
+        { "type": "spend", "time": { "start": "2026-03-15" },
+          "data": { "amount": 570, "currency": "JPY", "category": "交通" } }
+      ]
+    },
+    {
+      "id": "已知读不对-最后付的才是花的",
+      "in": "3月16日 买了个包 32,000日元 退税后 29,000日元",
+      "want": [{ "type": "spend", "time": { "start": "2026-03-16" },
+        "data": { "amount": 29000, "currency": "JPY", "category": "购物" } }]
+    }
+  ]
+}

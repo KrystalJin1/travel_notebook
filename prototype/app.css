@@ -142,6 +142,11 @@ body{padding:0;min-height:100dvh}
 /* 查不到坐标的码：一个码一行，行首把码本身立起来当标题 */
 .fix .code{flex:none;align-self:center;font-family:var(--display);font-size:14.5px;
   letter-spacing:.06em;color:var(--ink);padding:0 2px}
+/* 待确认区（§4.6）：一条一行 —— 勾在最前面，类型立起来当行首，剩下的是读到的内容。
+   粘进来的原文一般是好几行，所以这个框比别处高一档 */
+.pend-in{min-height:104px}
+.pend-t{flex:1 1 200px;align-self:center;min-width:0;font-family:var(--hand);
+  font-size:14px;line-height:1.55;color:var(--ink);overflow-wrap:anywhere}
 /* 照片那一栏行首的小样：换完图当场看见换成了什么（§4.8 100ms 内要有反馈）。
    它同时是「点一下换图」的按钮，所以得看出来能点 */
 .thumb{flex:none;width:76px;align-self:center;background:#fff;padding:3px;cursor:pointer;

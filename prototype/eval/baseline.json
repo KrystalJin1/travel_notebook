@@ -1,0 +1,24 @@
+{
+  "_": "eval/parse-cases.json 上量出来的分，node test-page.js 会重算一遍，任何字段降了就 FAIL。只记 F1，往下取整。改词表 / 改规则之后确认是有意的取舍，才 node test-page.js --record 重录。n 是评测集条数 —— 加了 case 分母就变了，必须显式重录，不许让门槛悄悄失效。",
+  "n": 31,
+  "overall": 0.9737,
+  "fields": {
+    "data.amount": 0.7826,
+    "data.booked": 1,
+    "data.category": 0.9565,
+    "data.checkIn": 1,
+    "data.checkOut": 1,
+    "data.code": 1,
+    "data.currency": 0.9655,
+    "data.day": 1,
+    "data.from": 1,
+    "data.mode": 1,
+    "data.price": 1,
+    "data.to": 1,
+    "place.city": 1,
+    "place.name": 1,
+    "time.end": 1,
+    "time.start": 0.9811,
+    "type": 0.9863
+  }
+}
